@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { Project } from "ts-morph"; // Import direct de Project
 import { readController } from '../core/read-controller';
 
 type TreeItemType = ControllerItem | EndpointItem;
@@ -26,101 +27,129 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
   }
 
   getTreeItem(element: TreeItemType): vscode.TreeItem {
-    console.log('[ApiTreeProvider] getTreeItem appelé pour:', element.label);
     return element;
   }
 
   async getChildren(element?: TreeItemType): Promise<TreeItemType[]> {
-    console.log('[ApiTreeProvider] getChildren appelé, element:', element?.label || 'ROOT');
     
     if (!element) {
+      // 1. Retour du cache si disponible
       if (this.controllersCache.length > 0) {
-        console.log('[ApiTreeProvider] Retour du cache');
         return this.controllersCache;
       }
 
       if (this.isLoading) {
-        console.log('[ApiTreeProvider] Chargement en cours...');
-        return this.controllersCache;
+        return [];
       }
 
       try {
         this.isLoading = true;
 
-        // Vérifier qu'un workspace est ouvert
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
-          console.error('[ApiTreeProvider] Aucun workspace ouvert');
-          vscode.window.showWarningMessage('Veuillez ouvrir un dossier de projet pour voir les routes API.');
+          vscode.window.showWarningMessage('Veuillez ouvrir un dossier de projet.');
           this.isLoading = false;
           return [];
         }
 
-        console.log('[ApiTreeProvider] Recherche des fichiers *.controller.ts...');
+        // 2. Recherche des fichiers
         const controllerFiles = await vscode.workspace.findFiles(
           '**/*.controller.ts', 
           '**/node_modules/**'
         );
         
-        console.log(`[ApiTreeProvider] ${controllerFiles.length} fichier(s) trouvé(s)`);
-        
         if (controllerFiles.length === 0) {
-          vscode.window.showInformationMessage('Aucun fichier *.controller.ts trouvé dans le projet.');
+          vscode.window.showInformationMessage('Aucun fichier *.controller.ts trouvé.');
           this.isLoading = false;
           return [];
         }
 
-        for (const file of controllerFiles) {
-          try {
-            console.log(`[ApiTreeProvider] Analyse de: ${file.fsPath}`);
-            const endpoints = readController(file.fsPath);
-            
-            console.log(`[ApiTreeProvider] ${endpoints.length} endpoint(s) trouvé(s) dans ${path.basename(file.fsPath)}`);
-            
-            if (endpoints.length > 0) {
-              const fileName = path.basename(file.fsPath);
-              const baseName = fileName.replace('.controller.ts', '');
-              const controllerName = baseName.charAt(0).toUpperCase() + baseName.slice(1) + ' Controller';
-
-              // Ajouter au cache
-              this.controllersCache.push(new ControllerItem(
-                controllerName, 
-                endpoints, 
-                file.fsPath
-              ));
-
-              this.controllersCache.sort((a, b) => 
-                a.label!.toString().localeCompare(b.label!.toString())
-              );
-
-              this._onDidChangeTreeData.fire();
-            }
-          } catch (e) {
-            console.error(`[ApiTreeProvider] Erreur lecture controller ${file.fsPath}:`, e);
+        // 3. Barre de progression + Initialisation Singleton Project
+        return await vscode.window.withProgress({
+          location: vscode.ProgressLocation.Notification,
+          title: "Osprey: Analyse des APIs...",
+          cancellable: false
+        }, async (progress) => {
           
+          console.log('[ApiTreeProvider] Initialisation du Project ts-morph...');
+          
+          // INSTANCE UNIQUE DU PROJET (Performance x10)
+          const project = new Project({
+            skipAddingFilesFromTsConfig: true,
+            compilerOptions: {
+              experimentalDecorators: true,
+              emitDecoratorMetadata: true
+            }
+          });
+
+          const increment = 100 / controllerFiles.length;
+
+          for (let i = 0; i < controllerFiles.length; i++) {
+            const file = controllerFiles[i];
+            
+            // Mise à jour de la barre de notif
+            progress.report({ 
+                message: `(${i + 1}/${controllerFiles.length}) ${path.basename(file.fsPath)}`, 
+                increment: increment 
+            });
+
+            try {
+              // Ajout du fichier au projet existant
+              const sourceFile = project.addSourceFileAtPath(file.fsPath);
+              
+              // Analyse rapide
+              const endpoints = readController(sourceFile);
+              
+              if (endpoints.length > 0) {
+                const fileName = path.basename(file.fsPath);
+                const baseName = fileName.replace('.controller.ts', '');
+                const controllerName = baseName.charAt(0).toUpperCase() + baseName.slice(1) + ' Controller';
+
+                this.controllersCache.push(new ControllerItem(
+                  controllerName, 
+                  endpoints, 
+                  file.fsPath
+                ));
+              }
+
+              // IMPORTANT: Libérer la mémoire immédiatement après lecture
+              sourceFile.forget();
+
+            } catch (e) {
+              console.error(`[ApiTreeProvider] Erreur lecture ${file.fsPath}:`, e);
+            }
+
+            // IMPORTANT: Anti-Freeze (rend la main à l'UI tous les 5 fichiers)
+            if (i % 5 === 0) {
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
           }
-        }
 
-        console.log(`[ApiTreeProvider] Total: ${this.controllersCache.length} controller(s) valide(s)`);
-        
-        if (this.controllersCache.length === 0) {
-          vscode.window.showInformationMessage('Aucun endpoint trouvé dans les controllers.');
-        }
+          // Tri alphabétique
+          this.controllersCache.sort((a, b) => 
+            a.label!.toString().localeCompare(b.label!.toString())
+          );
 
-        this.isLoading = false;
-        return this.controllersCache;
+          console.log(`[ApiTreeProvider] Terminé. ${this.controllersCache.length} controllers.`);
+          
+          if (this.controllersCache.length === 0) {
+            vscode.window.showInformationMessage('Aucun endpoint trouvé.');
+          }
+
+          this.isLoading = false;
+          return this.controllersCache;
+        });
         
       } catch (error) {
-        console.error('[ApiTreeProvider] Erreur dans getChildren (root):', error);
-        vscode.window.showErrorMessage('Erreur lors de la lecture des controllers: ' + error);
+        console.error('[ApiTreeProvider] Erreur critique:', error);
+        vscode.window.showErrorMessage('Erreur lors de l\'analyse: ' + error);
         this.isLoading = false;
         return [];
       }
     }
 
-    //  Liste des Endpoints d'un Controller
+    // Affichage des enfants (Endpoints)
     else if (element instanceof ControllerItem) {
-      console.log(`[ApiTreeProvider] Affichage des endpoints pour: ${element.name}`);
       return element.endpoints.map(ep => new EndpointItem(
         ep.httpMethod,
         ep.route,
@@ -134,7 +163,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
 }
 
 /**
- * Fichier Controller
+ * Node: Controller
  */
 class ControllerItem extends vscode.TreeItem {
   constructor(
@@ -143,7 +172,6 @@ class ControllerItem extends vscode.TreeItem {
     public readonly filePath: string
   ) {
     super(name, vscode.TreeItemCollapsibleState.Collapsed);
-    
     this.tooltip = filePath;
     this.description = `(${endpoints.length})`;
     this.iconPath = new vscode.ThemeIcon('symbol-class');
@@ -152,7 +180,7 @@ class ControllerItem extends vscode.TreeItem {
 }
 
 /**
- * Endpoint API
+ * Node: Endpoint
  */
 class EndpointItem extends vscode.TreeItem {
   constructor(
@@ -162,11 +190,9 @@ class EndpointItem extends vscode.TreeItem {
     public readonly line: number
   ) {
     super(`${method} ${route}`, vscode.TreeItemCollapsibleState.None);
-    
     this.tooltip = `Ligne ${line + 1} - Cliquez pour tester`;
     this.iconPath = this.getIcon(method);
     this.contextValue = 'endpoint';
-
     
     this.command = {
       command: 'api-tester.openPanel',
@@ -177,18 +203,12 @@ class EndpointItem extends vscode.TreeItem {
 
   getIcon(method: string): vscode.ThemeIcon {
     switch (method.toUpperCase()) {
-      case 'GET': 
-        return new vscode.ThemeIcon('arrow-small-right', new vscode.ThemeColor('charts.green'));
-      case 'POST': 
-        return new vscode.ThemeIcon('add', new vscode.ThemeColor('charts.orange'));
-      case 'DELETE': 
-        return new vscode.ThemeIcon('trash', new vscode.ThemeColor('charts.red'));
-      case 'PUT': 
-        return new vscode.ThemeIcon('edit', new vscode.ThemeColor('charts.blue'));
-      case 'PATCH': 
-        return new vscode.ThemeIcon('git-merge', new vscode.ThemeColor('charts.purple'));
-      default: 
-        return new vscode.ThemeIcon('symbol-method');
+      case 'GET': return new vscode.ThemeIcon('arrow-small-right', new vscode.ThemeColor('charts.green'));
+      case 'POST': return new vscode.ThemeIcon('add', new vscode.ThemeColor('charts.orange'));
+      case 'DELETE': return new vscode.ThemeIcon('trash', new vscode.ThemeColor('charts.red'));
+      case 'PUT': return new vscode.ThemeIcon('edit', new vscode.ThemeColor('charts.blue'));
+      case 'PATCH': return new vscode.ThemeIcon('git-merge', new vscode.ThemeColor('charts.purple'));
+      default: return new vscode.ThemeIcon('symbol-method');
     }
   }
 }

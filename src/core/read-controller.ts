@@ -1,4 +1,4 @@
-import { Project, ClassDeclaration } from "ts-morph";
+import { SourceFile, ClassDeclaration } from "ts-morph";
 import { getTableNameFromEntity } from "./read-entity";
 
 export interface EndpointDef {
@@ -16,22 +16,15 @@ export interface EndpointDef {
   endLine: number;   
 }
 
-export function readController(filePath: string, fileContent?: string): EndpointDef[] {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: {
-      experimentalDecorators: true,
-      emitDecoratorMetadata: true
-    }
-  });
-
-  const sourceFile = fileContent 
-    ? project.createSourceFile(filePath, fileContent, { overwrite: true })
-    : project.addSourceFileAtPath(filePath);
+/**
+ * Version Optimisée : Prend un SourceFile déjà chargé par le Provider
+ */
+export function readController(sourceFile: SourceFile): EndpointDef[] {
   
   const classes = sourceFile.getClasses();
   let controllerClass: ClassDeclaration | undefined;
   
+  // 1. Chercher le décorateur @Controller
   for (const classDecl of classes) {
     if (classDecl.getDecorator("Controller")) {
       controllerClass = classDecl;
@@ -39,6 +32,7 @@ export function readController(filePath: string, fileContent?: string): Endpoint
     }
   }
   
+  // 2. Fallback : Chercher par nom
   if (!controllerClass) {
     for (const classDecl of classes) {
       const className = classDecl.getName() || "";
@@ -49,6 +43,7 @@ export function readController(filePath: string, fileContent?: string): Endpoint
     }
   }
   
+  // 3. Fallback : Prendre la dernière classe exportée
   if (!controllerClass) {
     const exportedClasses = classes.filter(c => c.isExported());
     if (exportedClasses.length > 0) {
@@ -58,7 +53,7 @@ export function readController(filePath: string, fileContent?: string): Endpoint
   
   if (!controllerClass) return [];
 
-  // Route de base
+  // Route de base (ex: @Controller('users'))
   const controllerDecorator = controllerClass.getDecorator("Controller");
   let baseRoute = "";
   if (controllerDecorator) {
@@ -96,7 +91,7 @@ export function readController(filePath: string, fileContent?: string): Endpoint
     let fullRoute = baseRoute ? `/${baseRoute}/${subRoute}` : `/${subRoute}`;
     fullRoute = fullRoute.replace(/\/+/g, "/").replace(/\/$/, "");
     
-    // DTO
+    // DTO (@Body)
     let dtoClass, dtoPath;
     const bodyParam = method.getParameters().find((p) => 
       p.getDecorators().some((d) => d.getName() === "Body")
@@ -112,7 +107,7 @@ export function readController(filePath: string, fileContent?: string): Endpoint
       }
     }
     
-    // Entité
+    // Entité (ReturnType)
     let entityClass, entityPath, tableName;
     const returnType = method.getReturnType();
     const returnSymbol = returnType.getSymbol();
@@ -122,14 +117,15 @@ export function readController(filePath: string, fileContent?: string): Endpoint
       const declarations = returnSymbol.getDeclarations();
       if (declarations.length > 0) {
         entityPath = declarations[0].getSourceFile().getFilePath();
+        // Optimisation : On ne lit le fichier entité que si nécessaire
         if (entityPath.includes(".entity.")) {
-          const foundTable = getTableNameFromEntity(entityPath, entityClass);
+          const foundTable = getTableNameFromEntity(entityPath, entityClass || '');
           if (foundTable) tableName = foundTable;
         }
       }
     }
     
-    // Paramètres
+    // Paramètres (@Param et @Query)
     const params = method.getParameters()
       .filter(p => p.getDecorators().some(d => d.getName() === "Param"))
       .map(p => p.getName());

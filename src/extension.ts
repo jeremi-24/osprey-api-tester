@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
+import { Project } from 'ts-morph'; 
 import { EndpointCodeLensProvider } from './providers/EndpointCodeLensProvider';
 import { EndpointCodeActionProvider } from './providers/EndpointCodeActionProvider';
 import { RequestPanel } from './panels/RequestPanel';
-import { analyzeCurrentFile } from './core/api-analyzer';
 import { readController } from './core/read-controller';
 import { readDto } from './core/read-dto';
 import { generateSkeletonPayload } from './core/generate-payload';
-import { ApiTreeProvider } from './providers/ApiTreeProvider'; // Import du nouveau provider
+import { ApiTreeProvider } from './providers/ApiTreeProvider';
+import { analyzeCurrentFile } from './core/api-analyzer';
 
 export function activate(context: vscode.ExtensionContext) {
 
@@ -17,7 +18,6 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('api-tester.refreshEntry', () => treeProvider.refresh())
     );
 
-    // 2. CodeLens (Texte au-dessus des méthodes)
     context.subscriptions.push(
         vscode.languages.registerCodeLensProvider(
             { language: 'typescript', scheme: 'file' },
@@ -25,7 +25,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // 3. CodeActions (Ampoule jaune)
     context.subscriptions.push(
         vscode.languages.registerCodeActionsProvider(
             { language: 'typescript', scheme: 'file' },
@@ -33,7 +32,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // 4. Commande Principale : Ouvrir le Panel
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'api-tester.openPanel',
@@ -44,12 +42,9 @@ export function activate(context: vscode.ExtensionContext) {
                 let lineNumber = argLineNumber;
                 let fileTextContent: string | undefined;
 
-                // Cas A: Appel depuis la Sidebar (On a le fileName et le lineNumber via les arguments)
                 if (fileName && lineNumber !== undefined) {
-                    // Si le fichier n'est pas ouvert, on le lit du disque ? 
-                    // readController gère ça via ts-morph, on a juste besoin du path.
+                    // Argument fourni par la Sidebar ou CodeLens
                 }
-                // Cas B: Appel depuis l'éditeur (Raccourci clavier)
                 else if (editor) {
                     fileName = editor.document.fileName;
                     lineNumber = editor.selection.active.line;
@@ -60,16 +55,34 @@ export function activate(context: vscode.ExtensionContext) {
                     return;
                 }
 
-                // Analyse
+                // --- MODIFICATION ICI ---
                 let endpoints;
                 try {
-                    endpoints = readController(fileName!, fileTextContent);
+                    // On prépare ts-morph
+                    const project = new Project({
+                        skipAddingFilesFromTsConfig: true,
+                        compilerOptions: { experimentalDecorators: true }
+                    });
+
+                    let sourceFile;
+                    
+                    // Si on a le contenu texte (fichier ouvert non sauvegardé), on l'utilise
+                    if (fileTextContent) {
+                        sourceFile = project.createSourceFile(fileName!, fileTextContent, { overwrite: true });
+                    } else {
+                        sourceFile = project.addSourceFileAtPath(fileName!);
+                    }
+
+                    // On appelle la fonction avec le SourceFile
+                    endpoints = readController(sourceFile);
+
                 } catch (e) {
+                    console.error(e);
                     vscode.window.showErrorMessage('Erreur lors de la lecture du Controller.');
                     return;
                 }
+                // ------------------------
 
-                // Trouver l'endpoint
                 const targetEndpoint = endpoints.find(e => {
                     const onDecorator = Math.abs(lineNumber! - e.line) <= 1;
                     const insideMethod = lineNumber! >= e.startLine && lineNumber! <= e.endLine;
@@ -77,12 +90,10 @@ export function activate(context: vscode.ExtensionContext) {
                 });
 
                 if (!targetEndpoint) {
-                    // Si on vient de la sidebar, c'est rare d'échouer ici sauf si le fichier a changé sans refresh
                     vscode.window.showErrorMessage(`Endpoint introuvable (Ligne ${lineNumber! + 1})`);
                     return;
                 }
 
-                // Génération Payload
                 let generatedPayload = {};
                 if (['POST', 'PUT', 'PATCH'].includes(targetEndpoint.httpMethod) && targetEndpoint.dtoPath && targetEndpoint.dtoClass) {
                     try {
@@ -93,7 +104,6 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                 }
 
-                // Ouverture Panel
                 RequestPanel.createOrShow(context.extensionUri, {
                     method: targetEndpoint.httpMethod,
                     route: targetEndpoint.route,
@@ -104,7 +114,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // 5. Commande de Debug (Analyse globale)
     const outputChannel = vscode.window.createOutputChannel('NestJS Tester');
     context.subscriptions.push(
         vscode.commands.registerCommand('api-tester.analyze', async () => {

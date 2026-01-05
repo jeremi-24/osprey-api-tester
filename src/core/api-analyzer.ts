@@ -1,5 +1,6 @@
 import * as path from "path";
 import * as dotenv from "dotenv";
+import { Project } from "ts-morph"; // <--- AJOUTER L'IMPORT
 import { readController } from "./read-controller";
 import { readDto } from "./read-dto";
 
@@ -22,7 +23,17 @@ export async function analyzeCurrentFile(
 
   let endpoints;
   try {
-    endpoints = readController(filePath);
+    // --- MODIFICATION ICI ---
+    // On crée une instance locale de Project juste pour ce fichier
+    const project = new Project({
+      skipAddingFilesFromTsConfig: true,
+      compilerOptions: { experimentalDecorators: true }
+    });
+    
+    const sourceFile = project.addSourceFileAtPath(filePath);
+    endpoints = readController(sourceFile); // On passe le sourceFile, pas le path
+    // ------------------------
+
   } catch (err) {
     logger(`Erreur lecture controller : ${(err as Error).message}`);
     return;
