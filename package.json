@@ -9,7 +9,9 @@
   },
   "repository": {
   "type": "git",
-  "url": "https://github.com/jeremi-24/osprey-api-tester.git"
+  "url": "https://github.com/jeremi-24/osprey-api-tester.git",
+  "license": "MIT"
+
 },
 
   "categories": [

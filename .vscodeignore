@@ -1,0 +1,22 @@
+# Node modules (inclus par package.json dependencies)
+node_modules/
+
+# TypeScript output (pas nécessaire dans le package, si déjà compilé)
+src/
+playground/
+
+# VSCode settings
+.vscode/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# VSIX packages
+*.vsix
+
+# Tests
+out/
+test/
