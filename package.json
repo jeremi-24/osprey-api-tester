@@ -22,7 +22,8 @@
   "activationEvents": [
     "onCommand:api-tester.openPanel",
     "onCommand:api-tester.analyze",
-    "onCommand:api-tester.refreshEntry"
+    "onCommand:api-tester.refreshEntry",
+    "onView:api-routes"
   ],
   "contributes": {
     "viewsContainers": {
@@ -30,7 +31,7 @@
         {
           "id": "api-tester-view-container",
           "title": "API Tester",
-          "icon": "./ospreylogo.png"
+          "icon": "./ospreylogo.svg"
         }
       ]
     },
@@ -39,7 +40,7 @@
         {
           "id": "api-routes",
           "name": "Routes NestJS",
-          "icon": "./ospreylogo.png"
+          "icon": "./ospreylogo.svg"
         }
       ]
     },

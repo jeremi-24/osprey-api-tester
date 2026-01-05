@@ -1,5 +1,4 @@
-# Node modules (inclus par package.json dependencies)
-node_modules/
+
 
 # TypeScript output (pas nécessaire dans le package, si déjà compilé)
 src/
