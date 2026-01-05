@@ -7,8 +7,13 @@
   "engines": {
     "vscode": "^1.80.0"
   },
+  "repository": {
+  "type": "git",
+  "url": "https://github.com/jeremi-24/osprey-api-tester.git"
+},
+
   "categories": [
-    "Other",
+    "Debuggers",
     "Testing"
   ],
   "main": "./dist/extension.js",
