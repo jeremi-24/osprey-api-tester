@@ -1,0 +1,123 @@
+{
+  "name": "osprey-api-tester",
+  "displayName": "Osprey API Tester",
+  "description": "Analyse instantanée des Controllers NestJS pour générer des tests api.",
+  "version": "0.0.1",
+  "publisher": "jeremi-24",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other",
+    "Testing"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:api-tester.openPanel",
+    "onCommand:api-tester.analyze",
+    "onCommand:api-tester.refreshEntry"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "api-tester-view-container",
+          "title": "API Tester",
+          "icon": "./ospreylogo.png"
+        }
+      ]
+    },
+    "views": {
+      "api-tester-view-container": [
+        {
+          "id": "api-routes",
+          "name": "Routes NestJS",
+          "icon": "./ospreylogo.png"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "api-tester.openPanel",
+        "title": "API Tester: Tester cet Endpoint"
+      },
+      {
+        "command": "api-tester.analyze",
+        "title": "API Tester: Analyser le fichier (Debug)"
+      },
+      {
+        "command": "api-tester.refreshEntry",
+        "title": "Rafraîchir",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "api-tester.openPanel",
+          "group": "navigation",
+          "when": "resourceLangId == typescript"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "api-tester.refreshEntry",
+          "when": "view == api-routes",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "NestJS API Tester",
+      "properties": {
+        "nestjsApiTester.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Clé API Google Gemini pour générer les payloads JSON automatiquement.",
+          "scope": "window"
+        }
+      }
+    },
+    "keywords": [
+      "nestjs",
+      "api",
+      "tester",
+      "testing",
+      "rest",
+      "client",
+      "osprey",
+      "debugging",
+      "typescript",
+      "validation",
+      "dto"
+    ],
+    "keybindings": [
+      {
+        "command": "api-tester.openPanel",
+        "key": "alt+t",
+        "mac": "cmd+t",
+        "when": "editorTextFocus && resourceLangId == typescript"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "test": "node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.9.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.0",
+    "ts-morph": "^21.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.x",
+    "@types/pg": "^8.11.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.3.3"
+  }
+}

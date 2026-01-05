@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es6",
+    "outDir": "dist",
+    "lib": ["es6", "dom"],
+    "sourceMap": true,
+    "rootDir": "./src",
+    "strict": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    
+    // CRITIQUE pour que ts-morph puisse analyser les décorateurs
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    
+    // Optionnel mais recommandé
+    "declaration": false
+  },
+  "exclude": ["node_modules", ".vscode-test", "playground"]
+}
