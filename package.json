@@ -1,13 +1,14 @@
 {
   "name": "osprey-api-tester",
   "displayName": "Osprey API Tester",
-  "description": "Analyse instantanée des Controllers NestJS pour générer des tests api.",
-  "version": "0.0.2",
+  "description": "Automatically analyzes your NestJS controllers, DTOs, and entities to generate API test template payload and requests. Provides a developer-friendly interface in VSCode for testing endpoints, viewing routes, and debugging API interactions efficiently.",
+  "version": "0.0.1",
   "icon": "icon.png",
   "publisher": "jeremi-24",
   "engines": {
     "vscode": "^1.80.0"
   },
+  "readme": "Readme-marketplace.md",
   "repository": {
   "type": "git",
   "url": "https://github.com/jeremi-24/osprey-api-tester.git",

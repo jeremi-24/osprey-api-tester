@@ -17,14 +17,13 @@ export interface EndpointDef {
 }
 
 /**
- * Version Optimisée : Prend un SourceFile déjà chargé par le Provider
+ * Lit un controller NestJS et retourne tous les endpoints
  */
 export function readController(sourceFile: SourceFile): EndpointDef[] {
   
   const classes = sourceFile.getClasses();
   let controllerClass: ClassDeclaration | undefined;
   
-  // 1. Chercher le décorateur @Controller
   for (const classDecl of classes) {
     if (classDecl.getDecorator("Controller")) {
       controllerClass = classDecl;
@@ -32,7 +31,6 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
     }
   }
   
-  // 2. Fallback : Chercher par nom
   if (!controllerClass) {
     for (const classDecl of classes) {
       const className = classDecl.getName() || "";
@@ -43,7 +41,6 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
     }
   }
   
-  // 3. Fallback : Prendre la dernière classe exportée
   if (!controllerClass) {
     const exportedClasses = classes.filter(c => c.isExported());
     if (exportedClasses.length > 0) {
@@ -53,7 +50,6 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
   
   if (!controllerClass) return [];
 
-  // Route de base (ex: @Controller('users'))
   const controllerDecorator = controllerClass.getDecorator("Controller");
   let baseRoute = "";
   if (controllerDecorator) {
@@ -63,89 +59,71 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
     }
   }
 
-  // Analyser les méthodes
   const endpoints: EndpointDef[] = [];
-  
-  controllerClass.getMethods().forEach((method) => {
-    // Chercher décorateur HTTP
+
+  controllerClass.getMethods().forEach(method => {
     const httpDecorator = method.getDecorators().find(d => {
       const name = d.getName();
-      return ["Post", "Get", "Put", "Delete", "Patch", "Options", "Head", "All"].includes(name);
+      return ["Post","Get","Put","Delete","Patch","Options","Head","All"].includes(name);
     });
-    
     if (!httpDecorator) return;
-    
-    // Positions
+
     const line = httpDecorator.getStartLineNumber() - 1;
     const startLine = method.getStartLineNumber() - 1;
     const endLine = method.getEndLineNumber() - 1;
     const httpMethod = httpDecorator.getName().toUpperCase();
-    
-    // Route
+
     let subRoute = "";
     const decoratorArgs = httpDecorator.getArguments();
-    if (decoratorArgs.length > 0) {
-      subRoute = decoratorArgs[0].getText().replace(/['"]/g, "").trim();
-    }
-    
+    if (decoratorArgs.length > 0) subRoute = decoratorArgs[0].getText().replace(/['"]/g, "").trim();
+
     let fullRoute = baseRoute ? `/${baseRoute}/${subRoute}` : `/${subRoute}`;
-    fullRoute = fullRoute.replace(/\/+/g, "/").replace(/\/$/, "");
-    
-    // DTO (@Body)
+    fullRoute = fullRoute.replace(/\/+/g,"/").replace(/\/$/,"");
+
     let dtoClass, dtoPath;
-    const bodyParam = method.getParameters().find((p) => 
-      p.getDecorators().some((d) => d.getName() === "Body")
-    );
-    
+    const bodyParam = method.getParameters().find(p => p.getDecorators().some(d => d.getName() === "Body"));
     if (bodyParam) {
       const paramType = bodyParam.getType();
       dtoClass = paramType.getSymbol()?.getName();
-      
       const declaration = paramType.getSymbol()?.getDeclarations()[0];
-      if (declaration) {
-        dtoPath = declaration.getSourceFile().getFilePath();
-      }
+      if (declaration) dtoPath = declaration.getSourceFile().getFilePath();
     }
-    
-    // Entité (ReturnType)
+
     let entityClass, entityPath, tableName;
     const returnType = method.getReturnType();
     const returnSymbol = returnType.getSymbol();
-    
     if (returnSymbol) {
       entityClass = returnSymbol.getName();
       const declarations = returnSymbol.getDeclarations();
       if (declarations.length > 0) {
         entityPath = declarations[0].getSourceFile().getFilePath();
-        // Optimisation : On ne lit le fichier entité que si nécessaire
         if (entityPath.includes(".entity.")) {
           const foundTable = getTableNameFromEntity(entityPath, entityClass || '');
           if (foundTable) tableName = foundTable;
         }
       }
     }
-    
-    // Paramètres (@Param et @Query)
+
     const params = method.getParameters()
       .filter(p => p.getDecorators().some(d => d.getName() === "Param"))
       .map(p => p.getName());
-    
+
     const queryParams = method.getParameters()
       .filter(p => p.getDecorators().some(d => d.getName() === "Query"))
       .map(p => p.getName());
 
     endpoints.push({
-      httpMethod, 
-      route: fullRoute, 
-      dtoClass, 
-      dtoPath, 
-      entityClass, 
-      entityPath, 
-      tableName, 
-      params, 
-      queryParams, 
-      line, 
-      startLine, 
+      httpMethod,
+      route: fullRoute,
+      dtoClass,
+      dtoPath,
+      entityClass,
+      entityPath,
+      tableName,
+      params,
+      queryParams,
+      line,
+      startLine,
       endLine
     });
   });

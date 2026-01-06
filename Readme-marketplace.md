@@ -1,7 +1,7 @@
 # Osprey API Tester
 
-[![Marketplace Version](https://vsmarketplacebadge.apphb.com/version/jeremi-24.osprey-api-tester.svg)](https://marketplace.visualstudio.com/items?itemName=jeremi-24.osprey-api-tester)
-[![Installs](https://vsmarketplacebadge.apphb.com/installs-short/jeremi-24.osprey-api-tester.svg)](https://marketplace.visualstudio.com/items?itemName=jeremi-24.osprey-api-tester)
+
+
 [![License](https://img.shields.io/github/license/jeremi-24/osprey-api-tester)](https://github.com/jeremi-24/osprey-api-tester)
 
 API testing inside VS Code, based on NestJS source code analysis.

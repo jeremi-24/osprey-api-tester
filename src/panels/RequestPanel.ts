@@ -21,6 +21,7 @@ export class RequestPanel {
         const column = vscode.ViewColumn.Two;
         if (RequestPanel.currentPanel) {
             RequestPanel.currentPanel._panel.reveal(column);
+            // On update avec les nouvelles données de base (route, method, etc)
             RequestPanel.currentPanel.update(data);
             return;
         }
@@ -29,11 +30,25 @@ export class RequestPanel {
             'apiTester',
             `Osprey: ${data.method} ${data.route}`,
             column,
-            { enableScripts: true, retainContextWhenHidden: true }
+            { 
+                enableScripts: true, 
+                retainContextWhenHidden: true 
+            }
         );
 
         RequestPanel.currentPanel = new RequestPanel(panel, extensionUri);
         RequestPanel.currentPanel.update(data);
+    }
+
+  
+    public static updatePayload(payload: any) {
+        if (RequestPanel.currentPanel) {
+            const jsonString = JSON.stringify(payload, null, 2);
+            RequestPanel.currentPanel._panel.webview.postMessage({
+                command: 'updateBody',
+                body: jsonString
+            });
+        }
     }
 
     public update(data: any) {
@@ -48,6 +63,12 @@ export class RequestPanel {
                     case 'sendRequest':
                         await this._handleSendRequest(message);
                         break;
+                    case 'alert':
+                        vscode.window.showErrorMessage(message.text);
+                        break;
+                    case 'info':
+                        vscode.window.showInformationMessage(message.text);
+                        break;
                 }
             },
             null,
@@ -58,9 +79,23 @@ export class RequestPanel {
     private async _handleSendRequest(message: any) {
         try {
             const headers: any = {};
-            if (message.body && message.body.trim() !== '' && message.method !== 'GET') {
+            
+            // 1. Content-Type automatique
+            if (message.body && message.body.trim() !== '' && message.method !== 'GET' && message.method !== 'DELETE') {
                 headers['Content-Type'] = 'application/json';
             }
+
+            // 2. Auth Logic
+            if (message.auth) {
+                if (message.auth.type === 'basic' && message.auth.user) {
+                    const b64 = Buffer.from(`${message.auth.user}:${message.auth.pass || ''}`).toString('base64');
+                    headers['Authorization'] = `Basic ${b64}`;
+                } else if (message.auth.type === 'bearer' && message.auth.token) {
+                    headers['Authorization'] = `Bearer ${message.auth.token}`;
+                }
+            }
+
+            // 3. Custom Headers
             if (message.headers) {
                 message.headers.forEach((header: any) => {
                     if (header.key && header.key.trim() && header.enabled !== false) {
@@ -70,7 +105,6 @@ export class RequestPanel {
             }
 
             let url = message.url;
-            // Gestion basique des query params
             const queryParams = message.queryParams
                 ?.filter((p: any) => p.enabled !== false && p.key && p.key.trim())
                 .map((p: any) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
@@ -85,27 +119,34 @@ export class RequestPanel {
                 try {
                     data = JSON.parse(message.body);
                 } catch {
+                    // Si le JSON est invalide, on envoie tel quel
                     data = message.body;
                 }
             }
 
             const startTime = Date.now();
+            const timeout = 10000; 
+
             const response = await axios({
                 method: message.method,
                 url: url,
                 data: data,
                 headers: headers,
-                validateStatus: () => true
+                timeout: timeout,
+                validateStatus: () => true 
             });
             const endTime = Date.now();
 
             let responseBody = response.data;
             if (typeof responseBody === 'object') {
                 responseBody = JSON.stringify(responseBody, null, 2);
+            } else if (typeof responseBody !== 'string') {
+                responseBody = String(responseBody);
             }
 
             this._panel.webview.postMessage({
                 command: 'response',
+                success: true,
                 status: response.status,
                 statusText: response.statusText,
                 data: responseBody,
@@ -114,10 +155,24 @@ export class RequestPanel {
                 size: this._formatSize(JSON.stringify(response.data || '').length)
             });
         } catch (error: any) {
+            let errorMsg = error.message;
+            let errorData = '';
+            
+            if (error.code === 'ECONNABORTED') {
+                errorMsg = `Timeout (${error.timeout}ms) exceeded`;
+            } else if (error.response) {
+                errorData = JSON.stringify(error.response.data, null, 2);
+            }
+
             this._panel.webview.postMessage({
-                command: 'error',
-                message: error.message,
-                data: error.response?.data ? JSON.stringify(error.response.data, null, 2) : ''
+                command: 'response',
+                success: false,
+                status: error.response?.status || 0,
+                statusText: 'Error',
+                data: errorData,
+                message: errorMsg,
+                time: 0,
+                size: '0 B'
             });
         }
     }
@@ -147,21 +202,26 @@ export class RequestPanel {
         const endpointData = {
             method: data.method || 'GET',
             route: data.route || '',
-            baseUrl: 'http://localhost:3000', // Tu peux rendre ça dynamique via config
+            baseUrl: 'http://localhost:3000', 
             defaultBody: data.payload ? JSON.stringify(data.payload, null, 2) : '{}',
             queryParams: data.queryParams || []
         };
 
-        // Combine base URL + route cleaning
         const fullUrl = `${endpointData.baseUrl}${endpointData.route}`.replace(/([^:]\/)\/+/g, "$1");
+        const iconUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'icon.png'));
 
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${this._panel.webview.cspSource} https:; script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://microsoft.github.io https://cdnjs.cloudflare.com; font-src https://microsoft.github.io https://cdnjs.cloudflare.com;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Osprey API Tester</title>
     <link rel="stylesheet" href="https://microsoft.github.io/vscode-codicons/dist/codicon.css">
+    
+    <!-- LOAD MONACO EDITOR via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+
     <style>
         :root {
             --tc-header-bg: var(--vscode-editor-background);
@@ -169,14 +229,16 @@ export class RequestPanel {
             --tc-input-bg: var(--vscode-input-background);
             --tc-blue: #007acc; 
             --tc-green: #4ade80;
+            --tc-orange: #fb923c;
             --tc-red: #f87171;
-            --tc-tab-active-border: var(--tc-blue);
+            --tc-purple: #c084fc;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: var(--vscode-font-family);
+            font-size: 13px;
             background: var(--vscode-editor-background);
             color: var(--vscode-editor-foreground);
             height: 100vh;
@@ -185,436 +247,450 @@ export class RequestPanel {
             overflow: hidden;
         }
 
-        /* --- HEADER (URL Bar) --- */
+        /* --- LAYOUT UTILS --- */
+        .hidden { display: none !important; }
+        .flex-col { display: flex; flex-direction: column; }
+        .flex-1 { flex: 1; overflow: hidden; }
+
+        /* --- HEADER --- */
         .header {
             display: flex;
-            padding: 10px;
+            align-items: center;
+            padding: 10px 16px;
             background: var(--vscode-editor-background);
             border-bottom: 1px solid var(--tc-border);
-            gap: 0;
-            height: 50px;
+            gap: 10px;
+            height: 60px;
         }
+        .app-icon { width: 28px; height: 28px; object-fit: contain; }
 
         .url-group {
             display: flex;
             flex: 1;
             border: 1px solid var(--vscode-input-border);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .method-select {
-            background: var(--vscode-dropdown-background);
-            color: var(--vscode-dropdown-foreground);
-            border: none;
-            border-right: 1px solid var(--vscode-input-border);
-            padding: 0 12px;
-            height: 100%;
-            font-weight: 600;
-            outline: none;
-            cursor: pointer;
-            appearance: none; 
-            min-width: 80px;
-            text-align: center;
-        }
-
-        .url-input {
-            flex: 1;
+            border-radius: 4px;
+            height: 36px;
             background: var(--tc-input-bg);
-            color: var(--vscode-input-foreground);
-            border: none;
-            padding: 0 12px;
-            outline: none;
-            font-family: 'Consolas', monospace;
-            font-size: 13px;
+            align-items: center;
         }
+
+        /* METHOD SELECTOR */
+        .custom-select { position: relative; height: 100%; min-width: 90px; cursor: pointer; border-right: 1px solid var(--vscode-input-border); }
+        .select-trigger { height: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-weight: 700; font-size: 13px; }
+        .select-options { display: none; position: absolute; top: 100%; left: 0; width: 100%; background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-input-border); z-index: 100; }
+        .select-options.open { display: block; }
+        .option { padding: 8px 10px; font-weight: 600; cursor: pointer; }
+        .option:hover { background: var(--vscode-list-hoverBackground); }
+        .GET { color: var(--tc-green); } .POST { color: var(--tc-orange); } .PUT { color: var(--tc-blue); } .DELETE { color: var(--tc-red); }
+
+        .url-input { flex: 1; background: transparent; border: none; padding: 0 12px; outline: none; font-family: 'Consolas', monospace; color: var(--vscode-input-foreground); }
 
         .send-btn {
-            background: var(--tc-blue);
-            color: white;
-            border: none;
-            padding: 0 20px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-left: 10px;
-            border-radius: 2px;
+            background: var(--tc-yellow); color: black; border: none; padding: 0 20px;
+            font-weight: 600; cursor: pointer; border-radius: 4px; height: 36px;
+            display: flex; align-items: center; gap: 6px;
         }
         .send-btn:hover { opacity: 0.9; }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .menu-btn {
+            background: transparent; color: var(--vscode-foreground); border: 1px solid var(--vscode-input-border);
+            width: 36px; height: 36px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+        .menu-btn:hover { background: var(--vscode-list-hoverBackground); }
+        .menu-btn.active { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
 
         /* --- TABS --- */
-        .tabs {
-            display: flex;
-            border-bottom: 1px solid var(--tc-border);
-            padding: 0 10px;
-            background: var(--vscode-editor-background);
-        }
-        .tab {
-            padding: 10px 16px;
-            cursor: pointer;
-            font-size: 12px;
-            opacity: 0.8;
-            border-bottom: 2px solid transparent;
-            text-transform: capitalize;
-        }
+        .tabs { display: flex; border-bottom: 1px solid var(--tc-border); padding: 0 16px; }
+        .tab { padding: 10px 16px; cursor: pointer; opacity: 0.7; border-bottom: 2px solid transparent; font-weight: 500; }
         .tab:hover { opacity: 1; }
-        .tab.active {
-            opacity: 1;
-            border-bottom-color: var(--tc-tab-active-border);
-            color: var(--tc-tab-active-border);
+        .tab.active { opacity: 1; border-bottom-color: var(--tc-blue); color: var(--tc-blue); }
+
+        /* --- MONACO EDITOR CONTAINER --- */
+        .monaco-wrapper { flex: 1; position: relative; overflow: hidden; padding-top: 5px; }
+        #bodyEditorContainer, #responseEditorContainer { width: 100%; height: 100%; }
+
+        /* --- TABLE & FORMS --- */
+        .param-table { width: 100%; border-collapse: collapse; }
+        .param-table th { text-align: left; padding: 6px 10px; font-size: 11px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--tc-border); }
+        .param-table td { padding: 4px 10px; border-bottom: 1px solid var(--tc-border); }
+        .param-input { width: 100%; background: transparent; border: none; color: var(--vscode-input-foreground); outline: none; font-family: 'Consolas', monospace; }
+
+        /* --- HISTORY SIDEBAR --- */
+        .history-panel {
+            width: 250px; border-right: 1px solid var(--tc-border); background: var(--vscode-sideBar-background);
+            display: none; flex-direction: column; overflow: hidden;
         }
-
-        /* --- MAIN CONTENT LAYOUT --- */
-        .split-view {
-            display: flex;
-            flex-direction: column;
-            flex: 1;
-            overflow: hidden;
+        .history-panel.visible { display: flex; }
+        .history-header { padding: 10px; font-weight: bold; border-bottom: 1px solid var(--tc-border); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+        .history-list { flex: 1; overflow-y: auto; }
+        .history-item {
+            padding: 8px 10px; border-bottom: 1px solid var(--tc-border); cursor: pointer;
+            display: flex; flex-direction: column; gap: 4px;
         }
+        .history-item:hover { background: var(--vscode-list-hoverBackground); }
+        .h-method { font-size: 10px; font-weight: bold; }
+        .h-url { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.8; }
+        .h-time { font-size: 10px; opacity: 0.5; text-align: right; }
 
-        .request-section {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            border-bottom: 4px solid var(--tc-border); /* Resizer simulation */
-        }
-
-        .response-section {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            background: var(--vscode-editor-background);
-        }
-
-        /* --- CONTENT AREAS --- */
-        .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
-        .tab-content.active { display: flex; }
-
-        /* Sub-tabs for Body (JSON, XML...) */
-        .sub-tabs {
-            display: flex;
-            gap: 10px;
-            padding: 6px 10px;
-            font-size: 11px;
-            color: var(--vscode-descriptionForeground);
-            border-bottom: 1px solid var(--tc-border);
-        }
-        .sub-tab { cursor: pointer; opacity: 0.6; font-weight: bold; }
-        .sub-tab.active { opacity: 1; color: var(--tc-blue); }
-
-        /* --- EDITORS --- */
-        .editor-wrapper {
-            position: relative;
-            flex: 1;
-            display: flex;
-            background: var(--vscode-editor-background);
-            overflow: hidden;
-        }
-
-        .line-numbers {
-            width: 40px;
-            background: var(--vscode-editor-background);
-            color: var(--vscode-editorLineNumber-foreground);
-            text-align: right;
-            padding: 10px 5px;
-            font-family: 'Consolas', monospace;
-            font-size: 13px;
-            line-height: 1.5;
-            border-right: 1px solid var(--tc-border);
-            user-select: none;
-        }
-
-        .code-editor {
-            flex: 1;
-            background: transparent;
-            color: var(--vscode-editor-foreground);
-            border: none;
-            resize: none;
-            padding: 10px;
-            font-family: 'Consolas', monospace;
-            font-size: 13px;
-            line-height: 1.5;
-            outline: none;
-            white-space: pre;
-            overflow: auto;
-        }
-
-        /* Readonly response editor specific */
-        .response-view {
-            flex: 1;
-            padding: 10px;
-            font-family: 'Consolas', monospace;
-            font-size: 13px;
-            line-height: 1.5;
-            overflow: auto;
-            white-space: pre;
-            color: #CE9178; /* Simple JSON coloring sim */
-        }
-        .key { color: #9CDCFE; }
-        .string { color: #CE9178; }
-        .number { color: #B5CEA8; }
-        .boolean { color: #569CD6; }
-        .null { color: #569CD6; }
-
-        /* --- RESPONSE STATUS BAR --- */
-        .status-bar {
-            display: flex;
-            align-items: center;
-            padding: 6px 15px;
-            border-bottom: 1px solid var(--tc-border);
-            font-size: 12px;
-            font-family: var(--vscode-font-family);
-            background: var(--vscode-editor-background);
-        }
-
-        .status-item {
-            margin-right: 20px;
-            display: flex;
-            gap: 5px;
-        }
-
+        /* --- STATUS BAR --- */
+        .status-bar { display: flex; padding: 6px 16px; border-bottom: 1px solid var(--tc-border); font-size: 12px; gap: 15px; }
         .status-val { font-weight: bold; }
         .status-val.success { color: var(--tc-green); }
         .status-val.error { color: var(--tc-red); }
-        .label { color: var(--vscode-descriptionForeground); }
 
-        /* --- TABLE STYLES (Headers/Query) --- */
-        .param-table { width: 100%; border-collapse: collapse; }
-        .param-table th { 
-            text-align: left; padding: 6px 10px; 
-            font-size: 11px; color: var(--vscode-descriptionForeground); 
-            border-bottom: 1px solid var(--tc-border);
+        /* --- LOADER OVERLAY --- */
+        .loader-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.3); z-index: 999; display: none;
+            align-items: center; justify-content: center;
         }
-        .param-table td { padding: 4px 10px; border-bottom: 1px solid var(--tc-border); }
-        .param-input {
-            width: 100%; background: transparent; border: none;
-            color: var(--vscode-input-foreground); outline: none;
-            font-family: 'Consolas', monospace;
+        .loader-overlay.visible { display: flex; }
+        .spinner {
+            width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%; border-top-color: var(--tc-blue);
+            animation: spin 1s ease-in-out infinite;
         }
-        .param-check { cursor: pointer; }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
     </style>
 </head>
 <body>
 
-    <!-- HEADER -->
-    <div class="header">
-        <div class="url-group">
-            <select class="method-select" id="methodSelect">
-                <option value="GET" ${endpointData.method === 'GET' ? 'selected' : ''}>GET</option>
-                <option value="POST" ${endpointData.method === 'POST' ? 'selected' : ''}>POST</option>
-                <option value="PUT" ${endpointData.method === 'PUT' ? 'selected' : ''}>PUT</option>
-                <option value="DELETE" ${endpointData.method === 'DELETE' ? 'selected' : ''}>DELETE</option>
-                <option value="PATCH" ${endpointData.method === 'PATCH' ? 'selected' : ''}>PATCH</option>
-            </select>
-            <input type="text" class="url-input" id="urlInput" value="${fullUrl}">
-        </div>
-        <button class="send-btn" onclick="sendRequest()">Send</button>
-    </div>
-
-    <!-- MAIN SPLIT VIEW -->
-    <div class="split-view">
+    <!-- HISTORY PANEL -->
+    <div style="display:flex; height:100vh; width:100vw;">
         
-        <!-- REQUEST SECTION -->
-        <div class="request-section">
-            <div class="tabs">
-                <div class="tab" onclick="switchTab('query')">Query</div>
-                <div class="tab" onclick="switchTab('headers')">Headers</div>
-                <div class="tab" onclick="switchTab('auth')">Auth</div>
-                <div class="tab active" onclick="switchTab('body')">Body</div>
-            </div>
-
-            <!-- QUERY PARAMS -->
-            <div id="query-tab" class="tab-content">
-                <table class="param-table">
-                    <thead><tr><th width="30"></th><th>KEY</th><th>VALUE</th></tr></thead>
-                    <tbody id="query-rows">
-                         ${endpointData.queryParams.map((p: any) => `
-                            <tr>
-                                <td><input type="checkbox" class="param-check" checked></td>
-                                <td><input type="text" class="param-input key" value="${p.key}"></td>
-                                <td><input type="text" class="param-input value" value="${p.value}"></td>
-                            </tr>
-                        `).join('')}
-                        <tr>
-                            <td><input type="checkbox" class="param-check" checked></td>
-                            <td><input type="text" class="param-input key" placeholder="New param"></td>
-                            <td><input type="text" class="param-input value"></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- HEADERS -->
-            <div id="headers-tab" class="tab-content">
-                <table class="param-table">
-                    <thead><tr><th width="30"></th><th>KEY</th><th>VALUE</th></tr></thead>
-                    <tbody id="header-rows">
-                        <tr>
-                            <td><input type="checkbox" class="param-check" checked></td>
-                            <td><input type="text" class="param-input key" value="Content-Type"></td>
-                            <td><input type="text" class="param-input value" value="application/json"></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
-             <!-- AUTH (Placeholder) -->
-            <div id="auth-tab" class="tab-content" style="padding: 20px; color: var(--vscode-descriptionForeground);">
-                Basic / Bearer Auth coming soon. Use Headers for now.
-            </div>
-
-            <!-- BODY -->
-            <div id="body-tab" class="tab-content active">
-                <div class="sub-tabs">
-                    <div class="sub-tab active">JSON</div>
-                    <div class="sub-tab">XML</div>
-                    <div class="sub-tab">Text</div>
-                    <div class="sub-tab">Form</div>
-                </div>
-                <div class="editor-wrapper">
-                    <div class="line-numbers" id="bodyLineNumbers">1</div>
-                    <textarea class="code-editor" id="bodyInput" spellcheck="false" oninput="updateLineNumbers('bodyInput', 'bodyLineNumbers')">${endpointData.defaultBody}</textarea>
-                </div>
+        <div class="history-panel" id="historyPanel">
+            <div class="history-header">History (Last 20)</div>
+            <div class="history-list" id="historyList">
+                <!-- Items injected here -->
             </div>
         </div>
 
-        <!-- RESPONSE SECTION -->
-        <div class="response-section">
-            <div class="status-bar">
-                <div class="status-item">
-                    <span class="label">Status:</span>
-                    <span class="status-val" id="statusVal">-</span>
+        <div style="flex:1; display:flex; flex-direction:column; min-width:0;">
+            <!-- HEADER -->
+            <div class="header">
+                <img src="${iconUri}" alt="Osprey" class="app-icon">
+                
+                <div class="url-group">
+                    <div class="custom-select" id="methodSelect" tabindex="0">
+                        <div class="select-trigger" id="methodTrigger">
+                            <span id="methodLabel" class="${endpointData.method}">${endpointData.method}</span>
+                            <i class="codicon codicon-chevron-down"></i>
+                        </div>
+                        <div class="select-options" id="methodOptions">
+                            <div class="option GET" onclick="setMethod('GET')">GET</div>
+                            <div class="option POST" onclick="setMethod('POST')">POST</div>
+                            <div class="option PUT" onclick="setMethod('PUT')">PUT</div>
+                            <div class="option PATCH" onclick="setMethod('PATCH')">PATCH</div>
+                            <div class="option DELETE" onclick="setMethod('DELETE')">DELETE</div>
+                        </div>
+                    </div>
+                    <input type="text" class="url-input" id="urlInput" value="${fullUrl}" placeholder="http://...">
                 </div>
-                <div class="status-item">
-                    <span class="label">Time:</span>
-                    <span class="status-val" id="timeVal">-</span>
-                </div>
-                <div class="status-item">
-                    <span class="label">Size:</span>
-                    <span class="status-val" id="sizeVal">-</span>
-                </div>
+                
+                <button class="send-btn" id="sendBtn" onclick="sendRequest()">
+                    <i class="codicon codicon-play"></i> Send
+                </button>
+                <button class="menu-btn" onclick="toggleHistory()" title="Toggle History">
+                    <i class="codicon codicon-history"></i>
+                </button>
             </div>
-            
-            <div class="editor-wrapper">
-                <div class="response-view" id="responseOutput"></div>
+
+            <!-- MAIN CONTENT -->
+            <div class="flex-1 flex-col" style="position:relative;">
+                
+                <!-- LOADER -->
+                <div class="loader-overlay" id="loader">
+                    <div class="spinner"></div>
+                </div>
+
+                <!-- REQUEST SECTION -->
+                <div style="flex: 1; display: flex; flex-direction: column; border-bottom: 1px solid var(--tc-border);">
+                    <div class="tabs">
+                        <div class="tab" onclick="switchTab('query')">Query</div>
+                        <div class="tab" onclick="switchTab('headers')">Headers</div>
+                        <div class="tab" onclick="switchTab('auth')">Auth</div>
+                        <div class="tab active" onclick="switchTab('body')">Body</div>
+                    </div>
+
+                    <div id="query-tab" class="tab-content hidden flex-1">
+                        <!-- Query Params Table -->
+                        <div style="overflow:auto; padding:10px;">
+                            <table class="param-table">
+                                <thead><tr><th width="30"></th><th>KEY</th><th>VALUE</th></tr></thead>
+                                <tbody id="query-rows">
+                                    ${endpointData.queryParams.map((p: any) => `
+                                    <tr>
+                                        <td><input type="checkbox" class="param-check" checked></td>
+                                        <td><input type="text" class="param-input key" value="${p.key}"></td>
+                                        <td><input type="text" class="param-input value" value="${p.value}"></td>
+                                    </tr>`).join('')}
+                                    <tr>
+                                        <td><input type="checkbox" class="param-check" checked></td>
+                                        <td><input type="text" class="param-input key" placeholder="New param"></td>
+                                        <td><input type="text" class="param-input value"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="headers-tab" class="tab-content hidden flex-1">
+                        <div style="overflow:auto; padding:10px;">
+                             <table class="param-table">
+                                <thead><tr><th width="30"></th><th>KEY</th><th>VALUE</th></tr></thead>
+                                <tbody id="header-rows">
+                                    <tr>
+                                        <td><input type="checkbox" class="param-check" checked></td>
+                                        <td><input type="text" class="param-input key" value="Content-Type"></td>
+                                        <td><input type="text" class="param-input value" value="application/json"></td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="checkbox" class="param-check" checked></td>
+                                        <td><input type="text" class="param-input key" placeholder="New header"></td>
+                                        <td><input type="text" class="param-input value"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="auth-tab" class="tab-content hidden flex-1" style="padding:20px;">
+                        <div style="display:flex; gap:15px; margin-bottom:15px;">
+                            <label><input type="radio" name="authType" value="none" checked onchange="toggleAuth()"> None</label>
+                            <label><input type="radio" name="authType" value="basic" onchange="toggleAuth()"> Basic</label>
+                            <label><input type="radio" name="authType" value="bearer" onchange="toggleAuth()"> Bearer</label>
+                        </div>
+                        <div id="basic-fields" class="hidden">
+                            <input type="text" id="auth-user" class="param-input" placeholder="Username" style="border:1px solid var(--tc-border); padding:8px; margin-bottom:10px;">
+                            <input type="password" id="auth-pass" class="param-input" placeholder="Password" style="border:1px solid var(--tc-border); padding:8px;">
+                        </div>
+                        <div id="bearer-fields" class="hidden">
+                             <input type="text" id="auth-token" class="param-input" placeholder="Token (ey...)" style="border:1px solid var(--tc-border); padding:8px;">
+                        </div>
+                    </div>
+
+                    <div id="body-tab" class="tab-content flex-1 flex-col">
+                        <div class="monaco-wrapper">
+                            <div id="bodyEditorContainer"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RESPONSE SECTION -->
+                <div style="height: 50%; display: flex; flex-direction: column;">
+                     <div class="status-bar">
+                        <div style="flex:1; display:flex; gap:15px;">
+                            <span>Status: <span id="statusVal" class="status-val">-</span></span>
+                            <span>Time: <span id="timeVal">-</span></span>
+                            <span>Size: <span id="sizeVal">-</span></span>
+                        </div>
+                    </div>
+                    <div class="monaco-wrapper">
+                         <div id="responseEditorContainer"></div>
+                    </div>
+                </div>
+
             </div>
         </div>
-
     </div>
 
     <script>
         const vscode = acquireVsCodeApi();
-
-        // --- TAB SWITCHING ---
-        function switchTab(tabName) {
-            // UI Update
-            document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
-
-            // Content Update
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            const target = document.getElementById(tabName + '-tab');
-            if(target) target.classList.add('active');
-        }
-
-        // --- LINE NUMBERS SYNC ---
-        function updateLineNumbers(textareaId, numbersId) {
-            const textarea = document.getElementById(textareaId);
-            const lines = textarea.value.split('\\n').length;
-            document.getElementById(numbersId).innerHTML = Array(lines).fill(0).map((_, i) => i + 1).join('<br>');
-        }
-
-        // Init line numbers
-        updateLineNumbers('bodyInput', 'bodyLineNumbers');
-
-        // --- SEND REQUEST ---
-        function sendRequest() {
-            const method = document.getElementById('methodSelect').value;
-            const url = document.getElementById('urlInput').value;
-            const body = document.getElementById('bodyInput').value;
+        let bodyEditor, responseEditor;
+        let currentMethod = '${endpointData.method}';
+        
+        // --- 1. INITIALIZE MONACO EDITOR ---
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
             
-            // Collect Query Params
+            // Editor Options for VSCode feel
+            const commonOptions = {
+                theme: 'vs-dark',
+                automaticLayout: true,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                fontSize: 13,
+                fontFamily: 'Consolas, monospace',
+                lineNumbersMinChars: 3,
+            };
+
+            // Body Editor (Editable)
+            bodyEditor = monaco.editor.create(document.getElementById('bodyEditorContainer'), {
+                value: ${JSON.stringify(endpointData.defaultBody)},
+                language: 'json',
+                ...commonOptions
+            });
+
+            // Response Editor (Read Only)
+            responseEditor = monaco.editor.create(document.getElementById('responseEditorContainer'), {
+                value: '// Response will appear here...',
+                language: 'json',
+                readOnly: true,
+                ...commonOptions
+            });
+
+            // Format Body on Load
+            setTimeout(() => {
+                bodyEditor.getAction('editor.action.formatDocument').run();
+            }, 500);
+        });
+
+        // --- 2. TABS & UI ---
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+            
+            event.target.classList.add('active');
+            const content = document.getElementById(tab + '-tab');
+            content.classList.remove('hidden');
+            
+            if (tab === 'body' && bodyEditor) bodyEditor.layout();
+        }
+
+        // Method Selector
+        const methodSelect = document.getElementById('methodSelect');
+        const methodOptions = document.getElementById('methodOptions');
+        const methodLabel = document.getElementById('methodLabel');
+        
+        methodSelect.addEventListener('click', () => methodOptions.classList.toggle('open'));
+        document.addEventListener('click', (e) => { if (!methodSelect.contains(e.target)) methodOptions.classList.remove('open'); });
+        
+        function setMethod(m) {
+            currentMethod = m;
+            methodLabel.textContent = m;
+            methodLabel.className = m;
+        }
+
+        function toggleAuth() {
+            const type = document.querySelector('input[name="authType"]:checked').value;
+            document.getElementById('basic-fields').classList.toggle('hidden', type !== 'basic');
+            document.getElementById('bearer-fields').classList.toggle('hidden', type !== 'bearer');
+        }
+
+        function toggleHistory() {
+            document.getElementById('historyPanel').classList.toggle('visible');
+            document.querySelector('.menu-btn').classList.toggle('active');
+            if (bodyEditor) setTimeout(() => bodyEditor.layout(), 200);
+        }
+
+        // --- 3. SEND REQUEST LOGIC ---
+        function sendRequest() {
+            const url = document.getElementById('urlInput').value;
+            const body = bodyEditor ? bodyEditor.getValue() : '';
+            
+            // Build Params & Headers (Scraping DOM)
             const queryParams = [];
             document.querySelectorAll('#query-rows tr').forEach(row => {
-                const check = row.querySelector('.param-check');
-                const key = row.querySelector('.key').value;
-                const val = row.querySelector('.value').value;
-                if(check && check.checked && key) {
-                    queryParams.push({ key, value: val, enabled: true });
-                }
+                const k = row.querySelector('.key').value;
+                const v = row.querySelector('.value').value;
+                const c = row.querySelector('.param-check');
+                if (c && c.checked && k) queryParams.push({ key: k, value: v, enabled: true });
             });
 
-            // Collect Headers
             const headers = [];
             document.querySelectorAll('#header-rows tr').forEach(row => {
-                const check = row.querySelector('.param-check');
-                const key = row.querySelector('.key').value;
-                const val = row.querySelector('.value').value;
-                if(check && check.checked && key) {
-                    headers.push({ key, value: val, enabled: true });
-                }
+                const k = row.querySelector('.key').value;
+                const v = row.querySelector('.value').value;
+                const c = row.querySelector('.param-check');
+                if (c && c.checked && k) headers.push({ key: k, value: v, enabled: true });
             });
 
-            document.getElementById('responseOutput').innerHTML = '<span style="color:var(--vscode-descriptionForeground)">Sending request...</span>';
+            const authType = document.querySelector('input[name="authType"]:checked').value;
+            let auth = null;
+            if (authType === 'basic') auth = { type: 'basic', user: document.getElementById('auth-user').value, pass: document.getElementById('auth-pass').value };
+            if (authType === 'bearer') auth = { type: 'bearer', token: document.getElementById('auth-token').value };
+
+            // UI Feedback
+            document.getElementById('loader').classList.add('visible');
+            document.getElementById('sendBtn').disabled = true;
+
+            // Save History
+            addToHistory(currentMethod, url);
 
             vscode.postMessage({
                 command: 'sendRequest',
-                method, url, body, queryParams, headers
+                method: currentMethod,
+                url, body, queryParams, headers, auth
             });
         }
 
-        // --- HANDLE RESPONSE ---
+        // --- 4. HISTORY MANAGEMENT (LocalStorage) ---
+        function loadHistory() {
+            const hist = JSON.parse(localStorage.getItem('osprey_history') || '[]');
+            const list = document.getElementById('historyList');
+            list.innerHTML = '';
+            
+            hist.forEach(item => {
+                const el = document.createElement('div');
+                el.className = 'history-item';
+                el.innerHTML = \`<span class="h-method \${item.method}">\${item.method}</span><span class="h-url">\${item.url}</span><span class="h-time">\${new Date(item.date).toLocaleTimeString()}</span>\`;
+                el.onclick = () => {
+                    document.getElementById('urlInput').value = item.url;
+                    setMethod(item.method);
+                    // On ne restaure pas le body complet ici par simplicité, mais on pourrait
+                };
+                list.appendChild(el);
+            });
+        }
+
+        function addToHistory(method, url) {
+            const hist = JSON.parse(localStorage.getItem('osprey_history') || '[]');
+            hist.unshift({ method, url, date: Date.now() });
+            if (hist.length > 20) hist.pop();
+            localStorage.setItem('osprey_history', JSON.stringify(hist));
+            loadHistory();
+        }
+
+        // Init History
+        loadHistory();
+
+        // --- 5. RESPONSE HANDLER & DYNAMIC UPDATES ---
         window.addEventListener('message', event => {
             const msg = event.data;
+            
+            // --- UPDATE BODY PAYLOAD (NEW) ---
+            if (msg.command === 'updateBody') {
+                if (bodyEditor) {
+                    bodyEditor.setValue(msg.body);
+                    // Auto-format
+                    setTimeout(() => {
+                        bodyEditor.getAction('editor.action.formatDocument').run();
+                    }, 100);
+                }
+                return; // Stop processing other types
+            }
+
+            // Stop Loader
+            document.getElementById('loader').classList.remove('visible');
+            document.getElementById('sendBtn').disabled = false;
+
             if (msg.command === 'response') {
-                // Update Status Bar
                 const statusEl = document.getElementById('statusVal');
                 statusEl.textContent = msg.status + ' ' + msg.statusText;
-                statusEl.className = 'status-val ' + (msg.status >= 200 && msg.status < 300 ? 'success' : 'error');
-
+                statusEl.className = 'status-val ' + (msg.success ? 'success' : 'error');
+                
                 document.getElementById('timeVal').textContent = msg.time + ' ms';
                 document.getElementById('sizeVal').textContent = msg.size;
 
-                // Syntax Highlight JSON
-                try {
-                    const json = JSON.parse(msg.data); // Ensure it's valid JSON
-                    const html = syntaxHighlight(json);
-                    document.getElementById('responseOutput').innerHTML = html;
-                } catch(e) {
-                    document.getElementById('responseOutput').textContent = msg.data;
+                if (responseEditor) {
+                    responseEditor.setValue(msg.data);
+                    // Auto-format response
+                    setTimeout(() => {
+                        responseEditor.getAction('editor.action.formatDocument').run();
+                    }, 100);
                 }
-            }
-            else if (msg.command === 'error') {
-                 document.getElementById('statusVal').textContent = 'Error';
-                 document.getElementById('statusVal').className = 'status-val error';
-                 document.getElementById('responseOutput').textContent = msg.message + '\\n' + msg.data;
             }
         });
 
-        // Simple JSON Syntax Highlighter
-        function syntaxHighlight(json) {
-            if (typeof json != 'string') {
-                 json = JSON.stringify(json, undefined, 2);
+        // --- 6. SHORTCUTS ---
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                sendRequest();
             }
-            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\\\[^u]|[^\\\\"])*"(\\s*:)?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function (match) {
-                var cls = 'number';
-                if (/^"/.test(match)) {
-                    if (/:$/.test(match)) {
-                        cls = 'key';
-                    } else {
-                        cls = 'string';
-                    }
-                } else if (/true|false/.test(match)) {
-                    cls = 'boolean';
-                } else if (/null/.test(match)) {
-                    cls = 'null';
-                }
-                return '<span class="' + cls + '">' + match + '</span>';
-            });
-        }
+        });
+
     </script>
 </body>
 </html>`;
