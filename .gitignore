@@ -1,6 +1,7 @@
 # Node modules
 node_modules/
 
+playground/
 # VSCode settings
 .vscode/
 
@@ -11,6 +12,7 @@ out/
 # Environment variables
 .env
 
+README.md
 # Logs
 *.log
 
