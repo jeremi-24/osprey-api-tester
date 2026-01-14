@@ -22,6 +22,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
+     "workspaceContains:**/*.controller.ts",
     "onCommand:api-tester.openPanel",
     "onCommand:api-tester.analyze",
     "onCommand:api-tester.refreshEntry",

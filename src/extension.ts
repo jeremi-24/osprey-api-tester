@@ -10,7 +10,7 @@ import { ApiTreeProvider } from './providers/ApiTreeProvider';
 import { analyzeCurrentFile } from './core/api-analyzer';
 
 export function activate(context: vscode.ExtensionContext) {
-    
+
     // ----------------- TS-MORPH GLOBAL PROJECT -----------------
     const tsProject = new Project({
         skipAddingFilesFromTsConfig: true,
@@ -32,6 +32,9 @@ export function activate(context: vscode.ExtensionContext) {
     // ----------------- TREE PROVIDER -----------------
     const treeProvider = new ApiTreeProvider();
     vscode.window.registerTreeDataProvider('api-routes', treeProvider);
+
+    // Start discovery in background (non-blocking)
+    treeProvider.startDiscovery();
 
     context.subscriptions.push(
         vscode.commands.registerCommand('api-tester.refreshEntry', () => treeProvider.refresh())
@@ -128,7 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
                         } catch (e) {
                             console.error('Erreur lecture DTO', e);
                         }
-                    }, 10); 
+                    }, 10);
                 }
             }
         )
@@ -153,4 +156,4 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
-export function deactivate() {}
+export function deactivate() { }
