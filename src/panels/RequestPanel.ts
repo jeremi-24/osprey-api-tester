@@ -30,9 +30,9 @@ export class RequestPanel {
             'apiTester',
             `Osprey: ${data.method} ${data.route}`,
             column,
-            { 
-                enableScripts: true, 
-                retainContextWhenHidden: true 
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true
             }
         );
 
@@ -40,7 +40,7 @@ export class RequestPanel {
         RequestPanel.currentPanel.update(data);
     }
 
-  
+
     public static updatePayload(payload: any) {
         if (RequestPanel.currentPanel) {
             const jsonString = JSON.stringify(payload, null, 2);
@@ -79,7 +79,7 @@ export class RequestPanel {
     private async _handleSendRequest(message: any) {
         try {
             const headers: any = {};
-            
+
             // 1. Content-Type automatique
             if (message.body && message.body.trim() !== '' && message.method !== 'GET' && message.method !== 'DELETE') {
                 headers['Content-Type'] = 'application/json';
@@ -109,7 +109,7 @@ export class RequestPanel {
                 ?.filter((p: any) => p.enabled !== false && p.key && p.key.trim())
                 .map((p: any) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
                 .join('&');
-            
+
             if (queryParams) {
                 url += (url.includes('?') ? '&' : '?') + queryParams;
             }
@@ -125,7 +125,7 @@ export class RequestPanel {
             }
 
             const startTime = Date.now();
-            const timeout = 10000; 
+            const timeout = 10000;
 
             const response = await axios({
                 method: message.method,
@@ -133,7 +133,7 @@ export class RequestPanel {
                 data: data,
                 headers: headers,
                 timeout: timeout,
-                validateStatus: () => true 
+                validateStatus: () => true
             });
             const endTime = Date.now();
 
@@ -157,7 +157,7 @@ export class RequestPanel {
         } catch (error: any) {
             let errorMsg = error.message;
             let errorData = '';
-            
+
             if (error.code === 'ECONNABORTED') {
                 errorMsg = `Timeout (${error.timeout}ms) exceeded`;
             } else if (error.response) {
@@ -177,7 +177,7 @@ export class RequestPanel {
         }
     }
 
-    private _formatHeaders(headers: any): Array<{key: string, value: string}> {
+    private _formatHeaders(headers: any): Array<{ key: string, value: string }> {
         return Object.entries(headers).map(([key, value]) => ({ key, value: String(value) }));
     }
 
@@ -202,7 +202,8 @@ export class RequestPanel {
         const endpointData = {
             method: data.method || 'GET',
             route: data.route || '',
-            baseUrl: 'http://localhost:3000', 
+            baseUrl: 'http://localhost:3000',
+            // Ici, on s'assure que data.payload (calculé avant) est utilisé
             defaultBody: data.payload ? JSON.stringify(data.payload, null, 2) : '{}',
             queryParams: data.queryParams || []
         };

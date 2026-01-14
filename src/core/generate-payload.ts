@@ -1,3 +1,4 @@
+import { Project } from "ts-morph";
 import { DtoField, readDto } from "./read-dto";
 
 /**
@@ -5,7 +6,7 @@ import { DtoField, readDto } from "./read-dto";
  * @param fields Liste des champs du DTO actuel
  * @param depth Sécurité pour éviter les boucles infinies (ex: User -> Post -> User)
  */
-export function generateSkeletonPayload(fields: DtoField[], depth = 0): any {
+export function generateSkeletonPayload(project: Project, fields: DtoField[], depth = 0): any {
   if (depth > 3) return {};
 
   const payload: any = {};
@@ -13,8 +14,9 @@ export function generateSkeletonPayload(fields: DtoField[], depth = 0): any {
   fields.forEach(field => {
     if (field.isClass && field.relatedDtoPath && field.relatedDtoName) {
       try {
-        const subFields = readDto(field.relatedDtoPath, field.relatedDtoName);
-        const subPayload = generateSkeletonPayload(subFields, depth + 1);
+        // ON PASSE LE PROJET ICI AUSSI
+        const subFields = readDto(project, field.relatedDtoPath, field.relatedDtoName);
+        const subPayload = generateSkeletonPayload(project, subFields, depth + 1);
 
         if (field.isArray) {
           payload[field.name] = [subPayload];
@@ -25,8 +27,8 @@ export function generateSkeletonPayload(fields: DtoField[], depth = 0): any {
         console.warn(`Impossible de lire le sous-DTO ${field.relatedDtoName}`, e);
         payload[field.name] = field.isArray ? [{}] : {};
       }
-    } 
-    
+    }
+
     else {
       payload[field.name] = getPrimitiveValue(field.type, field.isArray);
     }

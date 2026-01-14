@@ -4,18 +4,14 @@ export interface DtoField {
   name: string;
   type: string;
   isArray: boolean;
-  isClass: boolean;       
-  relatedDtoPath?: string; 
-  relatedDtoName?: string; 
+  isClass: boolean;
+  relatedDtoPath?: string;
+  relatedDtoName?: string;
 }
 
-export function readDto(filePath: string, className: string): DtoField[] {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-  });
-  
-  // On ajoute le fichier
-  const sourceFile = project.addSourceFileAtPath(filePath);
+export function readDto(project: Project, filePath: string, className: string): DtoField[] {
+  // On utilise le projet existant au lieu d'en créer un nouveau
+  const sourceFile = project.getSourceFile(filePath) || project.addSourceFileAtPath(filePath);
   const classDecl = sourceFile.getClass(className);
 
   if (!classDecl) {
@@ -32,14 +28,14 @@ function analyzeProperty(p: PropertyDeclaration): DtoField {
   const name = p.getName();
   const typeObj = p.getType();
   const typeText = typeObj.getText();
-  
+
   // Détection tableau
   const isArray = typeObj.isArray();
-  
+
   const baseType = isArray ? typeObj.getArrayElementType()! : typeObj;
-  
+
   const isPrimitive = isPrimitiveType(baseType);
-  
+
   let relatedDtoPath: string | undefined;
   let relatedDtoName: string | undefined;
 
@@ -60,7 +56,7 @@ function analyzeProperty(p: PropertyDeclaration): DtoField {
 
   return {
     name,
-    type: typeText, 
+    type: typeText,
     isArray,
     isClass: !!relatedDtoPath,
     relatedDtoPath,

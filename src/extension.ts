@@ -12,10 +12,7 @@ import { analyzeCurrentFile } from './core/api-analyzer';
 export function activate(context: vscode.ExtensionContext) {
 
     // ----------------- TS-MORPH GLOBAL PROJECT -----------------
-    const tsProject = new Project({
-        skipAddingFilesFromTsConfig: true,
-        compilerOptions: { experimentalDecorators: true }
-    });
+
 
     // ----------------- ENDPOINT CACHE -----------------
     const endpointsCache = new Map<string, EndpointDef[]>();
@@ -78,11 +75,12 @@ export function activate(context: vscode.ExtensionContext) {
                 }
 
                 let sourceFile: SourceFile;
+                const project = treeProvider.getProject(); // <--- SINGLETON
                 try {
                     if (fileTextContent) {
-                        sourceFile = tsProject.createSourceFile(fileName!, fileTextContent, { overwrite: true });
+                        sourceFile = project.createSourceFile(fileName!, fileTextContent, { overwrite: true });
                     } else {
-                        sourceFile = tsProject.getSourceFile(fileName!) || tsProject.addSourceFileAtPath(fileName!);
+                        sourceFile = project.getSourceFile(fileName!) || project.addSourceFileAtPath(fileName!);
                     }
                 } catch (e) {
                     console.error(e);
@@ -112,27 +110,26 @@ export function activate(context: vscode.ExtensionContext) {
                     return;
                 }
 
+                // 3. GENERER LE PAYLOAD AVANT (C'est rapide maintenant !)
+                let initialPayload = {};
+                if (['POST', 'PUT', 'PATCH'].includes(targetEndpoint.httpMethod)
+                    && targetEndpoint.dtoPath && targetEndpoint.dtoClass) {
+                    try {
+                        const project = treeProvider.getProject();
+                        const fields = readDto(project, targetEndpoint.dtoPath!, targetEndpoint.dtoClass!);
+                        initialPayload = generateSkeletonPayload(project, fields);
+                    } catch (e) {
+                        console.error('Erreur lecture DTO', e);
+                    }
+                }
+
                 // ----------------- SHOW PANEL -----------------
                 RequestPanel.createOrShow(context.extensionUri, {
                     method: targetEndpoint.httpMethod,
                     route: targetEndpoint.route,
-                    payload: {}, // initial empty
+                    payload: initialPayload, // On passe le payload ici
                     queryParams: targetEndpoint.queryParams.map(q => ({ key: q, value: '' }))
                 });
-
-                // ----------------- GENERATE PAYLOAD ASYNC -----------------
-                if (['POST', 'PUT', 'PATCH'].includes(targetEndpoint.httpMethod)
-                    && targetEndpoint.dtoPath && targetEndpoint.dtoClass) {
-                    setTimeout(() => {
-                        try {
-                            const fields = readDto(targetEndpoint.dtoPath!, targetEndpoint.dtoClass!);
-                            const generatedPayload = generateSkeletonPayload(fields);
-                            RequestPanel.updatePayload(generatedPayload);
-                        } catch (e) {
-                            console.error('Erreur lecture DTO', e);
-                        }
-                    }, 10);
-                }
             }
         )
     );

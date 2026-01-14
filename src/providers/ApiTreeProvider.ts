@@ -9,16 +9,16 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeItemType | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-   private controllersCache: Map<string, { name: string, filePath: string, endpoints?: EndpointDef[] }> = new Map();
+  private controllersCache: Map<string, { name: string, filePath: string, endpoints?: EndpointDef[] }> = new Map();
   private isLoading: boolean = false;
-  
-   private project: Project | undefined;
+
+  private project: Project | undefined;
 
   constructor() {
     console.log('[Osprey] ApiTreeProvider initialisé');
-    
-       setTimeout(() => {
-        this.startDiscovery();
+
+    setTimeout(() => {
+      this.startDiscovery();
     }, 1000);
 
     this.setupWatcher();
@@ -29,16 +29,16 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
    */
   private setupWatcher() {
     const watcher = vscode.workspace.createFileSystemWatcher('**/*.controller.ts');
-    
-       watcher.onDidChange(uri => {
+
+    watcher.onDidChange(uri => {
       const entry = this.controllersCache.get(uri.fsPath);
       if (entry) {
-        entry.endpoints = undefined; 
+        entry.endpoints = undefined;
         this._onDidChangeTreeData.fire();
       }
     });
 
-       watcher.onDidCreate(() => this.startDiscovery());
+    watcher.onDidCreate(() => this.startDiscovery());
     watcher.onDidDelete(uri => {
       this.controllersCache.delete(uri.fsPath);
       this._onDidChangeTreeData.fire();
@@ -52,68 +52,78 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
     if (this.isLoading) return;
     this.isLoading = true;
 
-       const excludePattern = '{**/node_modules/**,**/dist/**,**/build/**,**/out/**}';
-    
-    try {
-        const files = await vscode.workspace.findFiles('**/*.controller.ts', excludePattern);
-        
-               const newCache = new Map<string, { name: string, filePath: string, endpoints?: EndpointDef[] }>();
-        
-        for (const file of files) {
-            const fileName = path.basename(file.fsPath);
-            const baseName = fileName.replace('.controller.ts', '');
-            const controllerName = baseName.charAt(0).toUpperCase() + baseName.slice(1) + ' Controller';
-            
-                       const existing = this.controllersCache.get(file.fsPath);
-            
-            newCache.set(file.fsPath, {
-                name: controllerName,
-                filePath: file.fsPath,
-                endpoints: existing?.endpoints
-            });
-        }
+    const excludePattern = '{**/node_modules/**,**/dist/**,**/build/**,**/out/**}';
 
-        this.controllersCache = newCache;
-        console.log(`[Osprey] Discovery terminé : ${this.controllersCache.size} contrôleurs trouvés.`);
+    try {
+      const files = await vscode.workspace.findFiles('**/*.controller.ts', excludePattern);
+
+      const newCache = new Map<string, { name: string, filePath: string, endpoints?: EndpointDef[] }>();
+
+      for (const file of files) {
+        const fileName = path.basename(file.fsPath);
+        const baseName = fileName.replace('.controller.ts', '');
+        const controllerName = baseName.charAt(0).toUpperCase() + baseName.slice(1) + ' Controller';
+
+        const existing = this.controllersCache.get(file.fsPath);
+
+        newCache.set(file.fsPath, {
+          name: controllerName,
+          filePath: file.fsPath,
+          endpoints: existing?.endpoints
+        });
+      }
+
+      this.controllersCache = newCache;
+      console.log(`[Osprey] Discovery terminé : ${this.controllersCache.size} contrôleurs trouvés.`);
     } catch (err) {
-        console.error('[Osprey] Erreur discovery:', err);
+      console.error('[Osprey] Erreur discovery:', err);
     } finally {
-        this.isLoading = false;
-        this._onDidChangeTreeData.fire();
+      this.isLoading = false;
+      this._onDidChangeTreeData.fire();
     }
   }
 
   /**
    * VS Code appelle cette méthode pour construire l'arbre
    */
+  /**
+   * Retourne l'instance unique du projet ts-morph
+   */
+  public getProject(): Project {
+    if (!this.project) {
+      this.project = new Project({
+        skipAddingFilesFromTsConfig: true,
+        skipLoadingLibFiles: true, // <--- OPTIMISATION MAJEURE
+        compilerOptions: { experimentalDecorators: true, emitDecoratorMetadata: true }
+      });
+    }
+    return this.project;
+  }
+
   async getChildren(element?: TreeItemType): Promise<TreeItemType[]> {
-       if (!element) {
+    if (!element) {
       return Array.from(this.controllersCache.values())
         .sort((a, b) => a.name.localeCompare(b.name))
         .map(c => new ControllerItem(c.name, c.filePath, !!c.endpoints));
     }
 
-       if (element instanceof ControllerItem) {
+    if (element instanceof ControllerItem) {
       const entry = this.controllersCache.get(element.filePath);
       if (!entry) return [];
 
-           if (!entry.endpoints) {
-               if (!this.project) {
-            this.project = new Project({
-                skipAddingFilesFromTsConfig: true,
-                compilerOptions: { experimentalDecorators: true, emitDecoratorMetadata: true }
-            });
-        }
+      if (!entry.endpoints) {
+        // Utilisation du guetter pour garantir l'initialisation
+        const project = this.getProject();
 
         try {
-            const sourceFile = this.project.getSourceFile(element.filePath) || 
-                               this.project.addSourceFileAtPath(element.filePath);
-            
-                       await sourceFile.refreshFromFileSystem(); 
-            entry.endpoints = readController(sourceFile);
+          const sourceFile = project.getSourceFile(element.filePath) ||
+            project.addSourceFileAtPath(element.filePath);
+
+          await sourceFile.refreshFromFileSystem();
+          entry.endpoints = readController(sourceFile);
         } catch (e) {
-            console.error(`[Osprey] Erreur parsing ${element.filePath}:`, e);
-            return [];
+          console.error(`[Osprey] Erreur parsing ${element.filePath}:`, e);
+          return [];
         }
       }
 
@@ -131,7 +141,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
   getTreeItem(element: TreeItemType): vscode.TreeItem {
     return element;
   }
-  
+
   refresh(): void {
     this.startDiscovery();
   }
@@ -142,7 +152,7 @@ export class ApiTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
  */
 class ControllerItem extends vscode.TreeItem {
   constructor(
-    public readonly name: string, 
+    public readonly name: string,
     public readonly filePath: string,
     public readonly isAnalyzed: boolean
   ) {
@@ -150,7 +160,7 @@ class ControllerItem extends vscode.TreeItem {
     this.iconPath = new vscode.ThemeIcon('symbol-class');
     this.tooltip = filePath;
     this.contextValue = 'controller';
-       this.description = isAnalyzed ? '✓' : ''; 
+    this.description = isAnalyzed ? '✓' : '';
   }
 }
 
@@ -168,7 +178,7 @@ class EndpointItem extends vscode.TreeItem {
     this.iconPath = this.getIcon(method);
     this.contextValue = 'endpoint';
 
-       this.command = {
+    this.command = {
       command: 'api-tester.openPanel',
       title: 'Tester cet Endpoint',
       arguments: [filePath, line]

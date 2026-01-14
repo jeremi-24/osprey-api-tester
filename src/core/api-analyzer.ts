@@ -22,18 +22,15 @@ export async function analyzeCurrentFile(
   logger(`Analyse du fichier : ${path.basename(filePath)}`);
 
   let endpoints;
+  // Initialize project outside try-catch to reuse it later
+  const project = new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: { experimentalDecorators: true }
+  });
+
   try {
-    // --- MODIFICATION ICI ---
-    // On crée une instance locale de Project juste pour ce fichier
-    const project = new Project({
-      skipAddingFilesFromTsConfig: true,
-      compilerOptions: { experimentalDecorators: true }
-    });
-    
     const sourceFile = project.addSourceFileAtPath(filePath);
     endpoints = readController(sourceFile); // On passe le sourceFile, pas le path
-    // ------------------------
-
   } catch (err) {
     logger(`Erreur lecture controller : ${(err as Error).message}`);
     return;
@@ -50,7 +47,7 @@ export async function analyzeCurrentFile(
 
     if (ep.dtoClass && ep.dtoPath) {
       try {
-        const fields = readDto(ep.dtoPath, ep.dtoClass);
+        const fields = readDto(project, ep.dtoPath, ep.dtoClass);
         logger(`DTO détecté : ${ep.dtoClass}`);
         logger(
           `Champs : ${fields.map(f => `${f.name}:${f.type}`).join(", ")}`
