@@ -79,17 +79,22 @@
         }
       ]
     },
-    "configuration": {
-      "title": "NestJS API Tester",
-      "properties": {
-        "nestjsApiTester.geminiApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Clé API Google Gemini pour générer les payloads JSON automatiquement.",
-          "scope": "window"
-        }
-      }
+   "configuration": {
+  "title": "NestJS API Tester",
+  "properties": {
+    "nestjsApiTester.baseUrl": {
+      "type": "string",
+      "default": "http://localhost:5000",
+      "description": "URL de base par défaut pour vos requêtes API.",
+      "scope": "resource"
     },
+    "nestjsApiTester.geminiApiKey": {
+      "type": "string",
+      "default": "",
+      "description": "Clé API Google Gemini pour générer les payloads JSON automatiquement."
+    }
+  }
+},
     "keywords": [
       "nestjs",
       "api",
