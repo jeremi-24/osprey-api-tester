@@ -128,10 +128,6 @@ export class RequestPanel {
         .subtitle { font-size: 11px; color: var(--text-secondary); margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--border-color); }
         
         .header-actions { display: flex; gap: 10px; align-items: center; }
-        .sync-badge { 
-            font-size: 11px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; 
-            padding: 4px 8px; background: var(--input-bg); border-radius: var(--radius-sm);
-        }
 
         .send-btn { 
             background: var(--button-bg); color: var(--button-fg); border: none; 
@@ -169,10 +165,11 @@ export class RequestPanel {
             border-radius: 2px;
         }
         .input-box:focus-within { border-color: var(--focus-border); }
-        .input-box input {
+        .input-box input, .input-box select {
             background: transparent; border: none; color: inherit; 
             font-family: inherit; font-size: 13px; width: 100%; outline: none;
         }
+        .input-box select option { background: var(--input-bg); }
         
         /* TABS */
         .tabs { 
@@ -227,12 +224,16 @@ export class RequestPanel {
             border-top: 1px solid var(--border-color);
         }
 
-        /* PARAMS TABLE */
+        /* DATA TABLES (Headers, Params) */
         .param-table-container { padding: 20px; }
         .param-table { width: 100%; border-collapse: collapse; }
         .param-table tr { border-bottom: 1px solid var(--border-color); }
         .param-table td { padding: 12px 8px; }
         .param-key { font-family: 'Courier New', monospace; color: var(--button-bg); width: 140px; }
+
+        /* AUTH SECTION */
+        .auth-container { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .auth-header { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
 
         /* FOOTER */
         .footer {
@@ -252,7 +253,7 @@ export class RequestPanel {
             <div class="subtitle">API CLIENT</div>
         </div>
         <div class="header-actions">
-            <div class="sync-badge"><i class="codicon codicon-check"></i> Synced</div>
+            <!-- Synced badge removed -->
             <button class="send-btn" onclick="sendRequest()"><i class="codicon codicon-play"></i> Send Request</button>
         </div>
     </div>
@@ -272,7 +273,8 @@ export class RequestPanel {
         <div class="field-group">
             <div class="label">Route</div>
             <div class="input-box">
-                <input type="text" id="routePath" value="${data.route}" readonly>
+                <!-- Cleaned route path: removing :label params from display -->
+                <input type="text" id="routePath" value="${data.route.replace(/\/:[^/]+/g, '/')}" readonly>
             </div>
         </div>
     </div>
@@ -307,6 +309,76 @@ export class RequestPanel {
             </div>
         </div>
         
+        <!-- HEADERS -->
+        <div id="pane-headers" class="tab-pane">
+             <div class="param-table-container">
+                <table class="param-table" id="headersTable">
+                    <tr>
+                        <td>
+                            <div class="input-box">
+                                <input type="text" class="header-key" value="Content-Type" placeholder="Key">
+                            </div>
+                        </td>
+                         <td>
+                            <div class="input-box">
+                                <input type="text" class="header-val" value="application/json" placeholder="Value">
+                            </div>
+                        </td>
+                         <td style="width: 30px; text-align: center;">
+                            <i class="codicon codicon-close" style="cursor: pointer;" onclick="this.closest('tr').remove()"></i>
+                        </td>
+                    </tr>
+                    <!-- Dynamic rows can be added here -->
+                </table>
+                <div style="margin-top: 10px;">
+                    <button class="action-link" style="background:none; border:none; color: var(--accent);" onclick="addHeaderRow()">
+                        <i class="codicon codicon-add"></i> Add Header
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AUTH -->
+        <div id="pane-auth" class="tab-pane">
+            <div class="auth-container">
+                <div class="field-group">
+                    <div class="label">Authorization Type</div>
+                    <div class="input-box" style="width: 200px;">
+                        <select id="authType" onchange="toggleAuthFields()">
+                            <option value="none">No Auth</option>
+                            <option value="bearer">Bearer Token</option>
+                            <option value="basic">Basic Auth</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="auth-bearer" style="display: none;" class="field-group">
+                    <div class="label">Token</div>
+                    <div class="input-box">
+                        <input type="text" id="authToken" placeholder="e.g. eyJhbGciOiJIUzI1Ni...">
+                    </div>
+                </div>
+
+                <div id="auth-basic" style="display: none; gap: 15px; flex-direction: row;">
+                    <div class="field-group" style="flex: 1;">
+                         <div class="label">Username</div>
+                         <div class="input-box"><input type="text" id="authUser"></div>
+                    </div>
+                     <div class="field-group" style="flex: 1;">
+                         <div class="label">Password</div>
+                         <div class="input-box"><input type="password" id="authPass"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- QUERY (Placeholder for now as logic wasn't fully requested but UI needs consistency) -->
+        <div id="pane-query" class="tab-pane ${defaultTab === 'query' ? 'active' : ''}">
+             <div class="param-table-container">
+                <div style="color: var(--text-secondary); font-style: italic;">Query parameters will be added here in future updates.</div>
+            </div>
+        </div>
+
         <!-- BODY EDITOR -->
         <div id="pane-body" class="tab-pane ${defaultTab === 'body' ? 'active' : ''}">
             <div class="editor-header">
@@ -319,7 +391,7 @@ export class RequestPanel {
             <div id="bodyEditor" style="flex: 1;"></div>
         </div>
 
-        <!-- RESPONSE (Always visible split or separate? keeping split for now but styled better) -->
+        <!-- RESPONSE -->
         <div class="response-section" id="responseSection">
             <div class="editor-header" style="background: var(--bg-secondary); border-top: 1px solid var(--border-color);">
                 <div id="resMeta" style="font-weight: bold;">RESPONSE</div>
@@ -342,17 +414,19 @@ export class RequestPanel {
     <script>
         const vscode = acquireVsCodeApi();
         let bodyEditor, resEditor;
+        
+        // Use the route with placeholders for logic, but UI shows simplified
+        const originalRoutePattern = '${data.route}';
 
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
         require(['vs/editor/editor.main'], function() {
-            // Detect theme
             const isDark = document.body.dataset.vscodeThemeKind === 'vscode-light' ? false : true;
             
             monaco.editor.defineTheme('ospreyTheme', {
-                base: 'vs-dark', // we can rely on VS Code to pass theme class to body soon or just defaults
+                base: 'vs-dark', 
                 inherit: true,
                 rules: [],
-                colors: { 'editor.background': '#00000000' } // transparent to let css bg show
+                colors: { 'editor.background': '#00000000' }
             });
 
             const commonOptions = {
@@ -382,7 +456,6 @@ export class RequestPanel {
             });
         });
 
-        // Handle resize if needed manually or just let flex do it
         window.addEventListener('resize', () => {
             if(bodyEditor) bodyEditor.layout();
             if(resEditor) resEditor.layout();
@@ -400,14 +473,52 @@ export class RequestPanel {
             
             if(id === 'body' && bodyEditor) bodyEditor.layout();
         }
+        
+        function toggleAuthFields() {
+            const type = document.getElementById('authType').value;
+            document.getElementById('auth-bearer').style.display = type === 'bearer' ? 'block' : 'none';
+            document.getElementById('auth-basic').style.display = type === 'basic' ? 'flex' : 'none';
+        }
+
+        function addHeaderRow() {
+            const table = document.getElementById('headersTable');
+            const row = table.insertRow();
+            row.innerHTML = \`
+                <td><div class="input-box"><input type="text" class="header-key" placeholder="Key"></div></td>
+                <td><div class="input-box"><input type="text" class="header-val" placeholder="Value"></div></td>
+                <td style="width: 30px; text-align: center;"><i class="codicon codicon-close" style="cursor: pointer;" onclick="this.closest('tr').remove()"></i></td>
+            \`;
+        }
 
         function sendRequest() {
-            let fullUrl = document.getElementById('baseUrl').value + document.getElementById('routePath').value;
+            // Reconstruct logic url
+            let fullUrl = document.getElementById('baseUrl').value + originalRoutePattern;
+            
+            // Handle Params
             document.querySelectorAll('#pathParamsTable input').forEach(input => {
                 const val = input.value.trim();
                 const key = input.dataset.key;
                 if(val) fullUrl = fullUrl.replace(':' + key, val);
             });
+            
+            // Handle Headers
+            const headers = {};
+            document.querySelectorAll('#headersTable tr').forEach(row => {
+                const key = row.querySelector('.header-key')?.value.trim();
+                const val = row.querySelector('.header-val')?.value.trim();
+                if(key && val) headers[key] = val;
+            });
+
+            // Handle Auth
+            const authType = document.getElementById('authType').value;
+            if(authType === 'bearer') {
+                const token = document.getElementById('authToken').value.trim();
+                if(token) headers['Authorization'] = 'Bearer ' + token;
+            } else if (authType === 'basic') {
+                const u = document.getElementById('authUser').value.trim();
+                const p = document.getElementById('authPass').value.trim();
+                if(u && p) headers['Authorization'] = 'Basic ' + btoa(u + ':' + p);
+            }
 
             const btn = document.querySelector('.send-btn');
             const originalText = btn.innerHTML;
@@ -418,14 +529,14 @@ export class RequestPanel {
                 command: 'sendRequest',
                 method: '${data.method}',
                 url: fullUrl,
+                headers: headers,
                 body: bodyEditor ? bodyEditor.getValue() : '{}'
             });
 
-            // Re-enable after timeout or response handled
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
-            }, 5000); // Safety fallback
+            }, 5000); 
         }
 
         function format() { bodyEditor.getAction('editor.action.formatDocument').run(); }
