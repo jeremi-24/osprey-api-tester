@@ -481,9 +481,22 @@ export class RequestPanel {
 
             bodyEditor = monaco.editor.create(document.getElementById('bodyEditor'), {
                 ...commonOptions,
-                value: ${JSON.stringify(data.payload ? JSON.stringify(data.payload, null, 2) : '{}')},
+                value: '',
                 language: 'json',
             });
+
+            // Initialize payload with snippets if available
+            const initialPayload = ${JSON.stringify(data.payload || {})};
+            if (Object.keys(initialPayload).length > 0) {
+                const snippet = createSnippetFromObject(initialPayload);
+                // Give time for editor to be ready
+                setTimeout(() => {
+                    bodyEditor.focus();
+                    bodyEditor.getContribution('snippetController2').insert(snippet);
+                }, 100);
+            } else {
+                bodyEditor.setValue('{}');
+            }
             
             resEditor = monaco.editor.create(document.getElementById('resEditor'), {
                 ...commonOptions,
@@ -603,6 +616,34 @@ export class RequestPanel {
             vscode.postMessage({command:'info', text:'Copied to clipboard'}); 
         }
         function openRes() { vscode.postMessage({ command: 'openInEditor', content: resEditor.getValue() }); }
+
+        function createSnippetFromObject(obj) {
+            let index = 1;
+            function walk(o, indentLevel = 0) {
+                const indent = '    '.repeat(indentLevel);
+                if (o === null) return '\${' + (index++) + ':null}';
+                if (typeof o === 'string') return '"\${' + (index++) + ':' + o + '}"';
+                if (typeof o === 'number') return '\${' + (index++) + ':' + o + '}';
+                if (typeof o === 'boolean') return '\${' + (index++) + ':' + o + '}';
+                
+                if (Array.isArray(o)) {
+                    if(o.length === 0) return '[]';
+                    const items = o.map(item => walk(item, indentLevel + 1)).join(',\\n' + indent + '    ');
+                    return '[\\n' + indent + '    ' + items + '\\n' + indent + ']';
+                }
+                
+                if (typeof o === 'object') {
+                    if(Object.keys(o).length === 0) return '{}';
+                    const keys = Object.keys(o);
+                    const entries = keys.map(k => {
+                        return indent + '    "' + k + '": ' + walk(o[k], indentLevel + 1);
+                    }).join(',\\n');
+                    return '{\\n' + entries + '\\n' + indent + '}';
+                }
+                return '{}';
+            }
+            return walk(obj);
+        }
 
         window.addEventListener('message', e => {
             const m = e.data;
