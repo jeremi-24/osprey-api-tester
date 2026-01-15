@@ -19,7 +19,7 @@ export class RequestPanel {
             RequestPanel.currentPanel.update(data);
             return;
         }
-        const panel = vscode.window.createWebviewPanel('apiTester', `Osprey: ${data.method}`, vscode.ViewColumn.Two, {
+        const panel = vscode.window.createWebviewPanel('apiTester', `Osprey: ${data.route}`, vscode.ViewColumn.Two, {
             enableScripts: true,
             retainContextWhenHidden: true
         });
@@ -80,6 +80,7 @@ export class RequestPanel {
         const defaultTab = data.defaultTab || 'body';
         const hasParams = data.pathParams && data.pathParams.length > 0;
         const hasQueryParams = data.queryParams && data.queryParams.length > 0;
+        const iconUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'icon.png'));
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -268,7 +269,7 @@ export class RequestPanel {
 <body>
     <div class="app-header">
         <div class="logo-section">
-            <img src="/icon.png" alt="Osprey Logo" class="logo-icon">
+            <img src="${iconUri}" alt="Osprey Logo" class="logo-icon" style="width: 24px; height: 24px;">
             <div class="logo-text">Osprey</div>
             <div class="subtitle">API TESTER</div>
         </div>
