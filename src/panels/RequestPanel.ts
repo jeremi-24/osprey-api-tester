@@ -378,10 +378,10 @@ export class RequestPanel {
                 <table class="param-table" id="queryParamsTable">
                     ${data.queryParams && data.queryParams.length > 0 ? data.queryParams.map((q: any) => `
                         <tr>
-                            <td class="param-key">${q}</td>
+                            <td class="param-key" style="color:var(--accent); width: 140px;">${q.key}</td>
                             <td>
                                 <div class="input-box">
-                                    <input type="text" data-key="${q}" placeholder="Value">
+                                    <input type="text" class="query-input" data-key="${q.key}" placeholder="value">
                                 </div>
                             </td>
                         </tr>
@@ -515,10 +515,13 @@ export class RequestPanel {
 
             // Handle Query Params
             const queryParts = [];
-            document.querySelectorAll('#queryParamsTable input').forEach(input => {
+            // On cible spécifiquement les inputs des Query Params
+            document.querySelectorAll('#queryParamsTable .query-input').forEach(input => {
                 const val = input.value.trim();
                 const key = input.dataset.key;
-                if(val) queryParts.push(encodeURIComponent(key) + '=' + encodeURIComponent(val));
+                if(val) {
+                    queryParts.push(encodeURIComponent(key) + '=' + encodeURIComponent(val));
+                }
             });
             if(queryParts.length > 0) {
                 fullUrl += (fullUrl.includes('?') ? '&' : '?') + queryParts.join('&');
