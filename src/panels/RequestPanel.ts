@@ -41,6 +41,9 @@ export class RequestPanel {
                     await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
                     break;
                 case 'info': vscode.window.showInformationMessage(message.text); break;
+                case 'saveBaseUrl':
+                    await vscode.workspace.getConfiguration('nestjsApiTester').update('baseUrl', message.url, vscode.ConfigurationTarget.Global);
+                    break;
             }
         }, null, this._disposables);
     }
@@ -495,6 +498,11 @@ export class RequestPanel {
         window.addEventListener('resize', () => {
             if(bodyEditor) bodyEditor.layout();
             if(resEditor) resEditor.layout();
+        });
+
+        // Save Base URL on change
+        document.getElementById('baseUrl').addEventListener('change', (e) => {
+            vscode.postMessage({ command: 'saveBaseUrl', url: e.target.value.trim() });
         });
 
         function switchTab(id) {
