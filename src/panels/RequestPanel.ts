@@ -6,6 +6,8 @@ export class RequestPanel {
     private readonly _panel: vscode.WebviewPanel;
     private _disposables: vscode.Disposable[] = [];
     private _extensionUri: vscode.Uri;
+    private _lastAuth: any = { type: 'none' };
+    private _queryCache: { [key: string]: string } = {};
 
     private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
         this._panel = panel;
@@ -44,6 +46,12 @@ export class RequestPanel {
                 case 'saveBaseUrl':
                     await vscode.workspace.getConfiguration('nestjsApiTester').update('baseUrl', message.url, vscode.ConfigurationTarget.Global);
                     break;
+                case 'updateAuth':
+                    this._lastAuth = message.auth;
+                    break;
+                case 'updateQueryParam':
+                    this._queryCache[message.key] = message.value;
+                    break;
             }
         }, null, this._disposables);
     }
@@ -81,6 +89,11 @@ export class RequestPanel {
 
     private _getHtmlForWebview(data: any) {
         const defaultTab = data.defaultTab || 'body';
+        // Use existing auth data if available, otherwise fallback to stored _lastAuth
+        const authData = data.auth || this._lastAuth;
+        // Inject query cache
+        data.queryCache = this._queryCache;
+
         const hasParams = data.pathParams && data.pathParams.length > 0;
         const hasQueryParams = data.queryParams && data.queryParams.length > 0;
         const iconUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'icon.png'));
@@ -266,6 +279,17 @@ export class RequestPanel {
             font-size: 11px; font-weight: 500;
         }
         .footer-left { display: flex; gap: 15px; }
+        
+        /* STATUS BADGES */
+        .status-badge { 
+            padding: 2px 6px; border-radius: 4px; color: #fff; 
+            font-weight: bold; font-size: 11px; 
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .bg-success { background-color: #2ea043; } /* Green */
+        .bg-info { background-color: #0366d6; }    /* Blue */
+        .bg-warning { background-color: #d29922; } /* Orange */
+        .bg-error { background-color: #d73a49; }   /* Red */
 
     </style>
 </head>
@@ -371,9 +395,9 @@ export class RequestPanel {
                     <div class="label">Authorization Type</div>
                     <div class="input-box" style="width: 200px;">
                         <select id="authType" onchange="toggleAuthFields()">
-                            <option value="none">No Auth</option>
-                            <option value="bearer">Bearer Token</option>
-                            <option value="basic">Basic Auth</option>
+                            <option value="none" ${authData.type === 'none' ? 'selected' : ''}>No Auth</option>
+                            <option value="bearer" ${authData.type === 'bearer' ? 'selected' : ''}>Bearer Token</option>
+                            <option value="basic" ${authData.type === 'basic' ? 'selected' : ''}>Basic Auth</option>
                         </select>
                     </div>
                 </div>
@@ -381,18 +405,18 @@ export class RequestPanel {
                 <div id="auth-bearer" style="display: none;" class="field-group">
                     <div class="label">Token</div>
                     <div class="input-box">
-                        <input type="text" id="authToken" placeholder="e.g. eyJhbGciOiJIUzI1Ni...">
+                        <input type="text" id="authToken" placeholder="e.g. eyJhbGciOiJIUzI1Ni..." value="${authData.token || ''}">
                     </div>
                 </div>
 
                 <div id="auth-basic" style="display: none; gap: 15px; flex-direction: row;">
                     <div class="field-group" style="flex: 1;">
                          <div class="label">Username</div>
-                         <div class="input-box"><input type="text" id="authUser"></div>
+                         <div class="input-box"><input type="text" id="authUser" value="${authData.username || ''}"></div>
                     </div>
                      <div class="field-group" style="flex: 1;">
                          <div class="label">Password</div>
-                         <div class="input-box"><input type="password" id="authPass"></div>
+                         <div class="input-box"><input type="password" id="authPass" value="${authData.password || ''}"></div>
                     </div>
                 </div>
             </div>
@@ -407,7 +431,7 @@ export class RequestPanel {
                             <td class="param-key" style="color:var(--accent); width: 140px;">${q.key}</td>
                             <td>
                                 <div class="input-box">
-                                    <input type="text" class="query-input" data-key="${q.key}" placeholder="value">
+                                    <input type="text" class="query-input" data-key="${q.key}" placeholder="value" value="${data.queryCache[q.key] || ''}" oninput="updateQueryParam(this)">
                                 </div>
                             </td>
                         </tr>
@@ -513,10 +537,43 @@ export class RequestPanel {
             if(resEditor) resEditor.layout();
         });
 
-        // Save Base URL on change
         document.getElementById('baseUrl').addEventListener('change', (e) => {
             vscode.postMessage({ command: 'saveBaseUrl', url: e.target.value.trim() });
         });
+
+        // Initialize auth UI state
+        toggleAuthFields();
+
+        // Auth listeners
+        const authInputs = ['authType', 'authToken', 'authUser', 'authPass'];
+        authInputs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener(id === 'authType' ? 'change' : 'input', updateAuth);
+            }
+        });
+
+        function updateAuth(e) {
+            const type = document.getElementById('authType').value;
+            const token = document.getElementById('authToken').value;
+            const username = document.getElementById('authUser').value;
+            const password = document.getElementById('authPass').value;
+
+            vscode.postMessage({
+                command: 'updateAuth',
+                auth: { type, token, username, password }
+            });
+            
+            if (e && e.target && e.target.id === 'authType') toggleAuthFields();
+        }
+
+        function updateQueryParam(input) {
+            vscode.postMessage({
+                command: 'updateQueryParam',
+                key: input.dataset.key,
+                value: input.value
+            });
+        }
 
         function switchTab(id) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -530,6 +587,7 @@ export class RequestPanel {
             
             if(id === 'body' && bodyEditor) bodyEditor.layout();
         }
+        
         
         function toggleAuthFields() {
             const type = document.getElementById('authType').value;
@@ -655,7 +713,15 @@ export class RequestPanel {
                 if(resEditor) resEditor.setValue(m.data);
                 
                 const meta = document.getElementById('resMeta');
-                meta.innerHTML = \`<span style="color: \${m.success ? 'var(--vscode-testing-iconPassed)' : 'var(--vscode-testing-iconFailed)'}">\${m.status}</span> \` + (m.success ? 'OK' : 'ERROR');
+                let badgeClass = 'bg-error';
+                const s = m.status;
+                
+                if (s >= 200 && s < 300) badgeClass = 'bg-success';
+                else if (s >= 300 && s < 400) badgeClass = 'bg-info';
+                else if (s >= 400 && s < 500) badgeClass = 'bg-warning';
+                else badgeClass = 'bg-error';
+
+                meta.innerHTML = \`<span class="status-badge \${badgeClass}">\${m.status} \${(m.success ? 'OK' : 'ERROR')}</span>\`;
 
         document.getElementById('timeInfo').innerText = m.time + 'ms';
         document.getElementById('sizeInfo').innerText = m.size;
