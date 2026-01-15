@@ -2,6 +2,10 @@
 
 All notable changes to the "osprey-api-tester" extension will be documented in this file.
 
+## [0.0.5] - 2026-01-15
+### Fixed
+- Missing persistence of query, params and auth
+
 ## [0.0.4] - 2026-01-15
 ### Added
 - **UI Redesign**: Major update to the Request Panel interface for a better user experience.
