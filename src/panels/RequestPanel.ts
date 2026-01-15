@@ -200,11 +200,29 @@ export class RequestPanel {
         .main-content { 
             flex: 1; display: flex; flex-direction: column; 
             background: var(--bg-primary); 
-            overflow-y: auto;
+            overflow: hidden; 
+            position: relative;
         }
         
-        .tab-pane { display: none; padding: 0; height: 100%; flex-direction: column; }
+        .tab-pane { display: none; padding: 0; flex: 1; flex-direction: column; overflow-y: auto; }
         .tab-pane.active { display: flex; }
+        /* Body pane specific: no scroll, flex layout for editor */
+        #pane-body { overflow: hidden; }
+
+        /* RESIZER */
+        .resizer {
+            height: 4px;
+            background: transparent;
+            border-top: 1px solid var(--border-color);
+            cursor: ns-resize;
+            flex: 0 0 auto;
+            transition: background 0.2s;
+            z-index: 10;
+        }
+        .resizer:hover, .resizer.resizing {
+            background: var(--focus-border);
+            border-color: var(--focus-border);
+        }
 
         /* EDITOR AREAS */
         .editor-header {
@@ -222,7 +240,8 @@ export class RequestPanel {
         .response-section {
             height: 40%; 
             display: flex; flex-direction: column;
-            border-top: 1px solid var(--border-color);
+            flex: 0 0 auto;
+            min-height: 50px;
         }
 
         /* DATA TABLES (Headers, Params) */
@@ -249,9 +268,9 @@ export class RequestPanel {
 <body>
     <div class="app-header">
         <div class="logo-section">
-            <i class="codicon codicon-rocket logo-icon"></i>
+            <img src="/icon.png" alt="Osprey Logo" class="logo-icon">
             <div class="logo-text">Osprey</div>
-            <div class="subtitle">API CLIENT</div>
+            <div class="subtitle">API TESTER</div>
         </div>
         <div class="header-actions">
             <!-- Synced badge removed -->
@@ -407,6 +426,7 @@ export class RequestPanel {
         </div>
 
         <!-- RESPONSE -->
+        <div class="resizer" id="dragHandle"></div>
         <div class="response-section" id="responseSection">
             <div class="editor-header" style="background: var(--bg-secondary); border-top: 1px solid var(--border-color);">
                 <div id="resMeta" style="font-weight: bold;">RESPONSE</div>
@@ -585,14 +605,46 @@ export class RequestPanel {
                 if(resEditor) resEditor.setValue(m.data);
                 
                 const meta = document.getElementById('resMeta');
-                meta.innerHTML = \`<span style\="color: \${m.success ? 'var(--vscode-testing-iconPassed)' : 'var(--vscode-testing-iconFailed)'}">\${m.status}</span> \` + (m.success ? 'OK' : 'ERROR');
+                meta.innerHTML = \`<span style="color: \${m.success ? 'var(--vscode-testing-iconPassed)' : 'var(--vscode-testing-iconFailed)'}">\${m.status}</span> \` + (m.success ? 'OK' : 'ERROR');
 
-                document.getElementById('timeInfo').innerText = m.time + 'ms';
-                document.getElementById('sizeInfo').innerText = m.size;
-            }
-        });
-    </script>
-</body>
-</html>`;
+        document.getElementById('timeInfo').innerText = m.time + 'ms';
+        document.getElementById('sizeInfo').innerText = m.size;
+    }
+});
+
+// RESIZER LOGIC
+const resizer = document.getElementById('dragHandle');
+const responseSection = document.getElementById('responseSection');
+let isResizing = false;
+
+resizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    resizer.classList.add('resizing');
+    document.body.style.cursor = 'ns-resize';
+    e.preventDefault();
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const newHeight = window.innerHeight - e.clientY - 28;
+    if (newHeight > 50 && newHeight < window.innerHeight - 150) {
+        responseSection.style.height = newHeight + 'px';
+        if (resEditor) resEditor.layout();
+        if (bodyEditor) bodyEditor.layout();
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    if (isResizing) {
+        isResizing = false;
+        resizer.classList.remove('resizing');
+        document.body.style.cursor = 'default';
+        if (resEditor) resEditor.layout();
+        if (bodyEditor) bodyEditor.layout();
+    }
+});
+</script>
+    </body>
+    </html>`;
     }
 }
