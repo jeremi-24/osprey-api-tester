@@ -11,26 +11,26 @@ export interface EndpointDef {
   tableName?: string;
   params: string[];
   queryParams: string[];
-  line: number;      
-  startLine: number; 
-  endLine: number;   
+  line: number;
+  startLine: number;
+  endLine: number;
 }
 
 /**
  * Lit un controller NestJS et retourne tous les endpoints
  */
 export function readController(sourceFile: SourceFile): EndpointDef[] {
-  
+
   const classes = sourceFile.getClasses();
   let controllerClass: ClassDeclaration | undefined;
-  
+
   for (const classDecl of classes) {
     if (classDecl.getDecorator("Controller")) {
       controllerClass = classDecl;
       break;
     }
   }
-  
+
   if (!controllerClass) {
     for (const classDecl of classes) {
       const className = classDecl.getName() || "";
@@ -40,14 +40,14 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
       }
     }
   }
-  
+
   if (!controllerClass) {
     const exportedClasses = classes.filter(c => c.isExported());
     if (exportedClasses.length > 0) {
       controllerClass = exportedClasses[exportedClasses.length - 1];
     }
   }
-  
+
   if (!controllerClass) return [];
 
   const controllerDecorator = controllerClass.getDecorator("Controller");
@@ -64,7 +64,7 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
   controllerClass.getMethods().forEach(method => {
     const httpDecorator = method.getDecorators().find(d => {
       const name = d.getName();
-      return ["Post","Get","Put","Delete","Patch","Options","Head","All"].includes(name);
+      return ["Post", "Get", "Put", "Delete", "Patch", "Options", "Head", "All"].includes(name);
     });
     if (!httpDecorator) return;
 
@@ -78,7 +78,7 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
     if (decoratorArgs.length > 0) subRoute = decoratorArgs[0].getText().replace(/['"]/g, "").trim();
 
     let fullRoute = baseRoute ? `/${baseRoute}/${subRoute}` : `/${subRoute}`;
-    fullRoute = fullRoute.replace(/\/+/g,"/").replace(/\/$/,"");
+    fullRoute = fullRoute.replace(/\/+/g, "/").replace(/\/$/, "");
 
     let dtoClass, dtoPath;
     const bodyParam = method.getParameters().find(p => p.getDecorators().some(d => d.getName() === "Body"));
@@ -110,7 +110,16 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
 
     const queryParams = method.getParameters()
       .filter(p => p.getDecorators().some(d => d.getName() === "Query"))
-      .map(p => p.getName());
+      .map(p => {
+        const decorator = p.getDecorators().find(d => d.getName() === "Query");
+        if (decorator) {
+          const args = decorator.getArguments();
+          if (args.length > 0) {
+            return args[0].getText().replace(/['"]/g, "").trim();
+          }
+        }
+        return p.getName();
+      });
 
     endpoints.push({
       httpMethod,

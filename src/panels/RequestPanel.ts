@@ -375,7 +375,19 @@ export class RequestPanel {
         <!-- QUERY (Placeholder for now as logic wasn't fully requested but UI needs consistency) -->
         <div id="pane-query" class="tab-pane ${defaultTab === 'query' ? 'active' : ''}">
              <div class="param-table-container">
-                <div style="color: var(--text-secondary); font-style: italic;">Query parameters will be added here in future updates.</div>
+                <table class="param-table" id="queryParamsTable">
+                    ${data.queryParams && data.queryParams.length > 0 ? data.queryParams.map((q: any) => `
+                        <tr>
+                            <td class="param-key">${q}</td>
+                            <td>
+                                <div class="input-box">
+                                    <input type="text" data-key="${q}" placeholder="Value">
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('') : ''}
+                </table>
+                ${(!data.queryParams || data.queryParams.length === 0) ? '<div style="padding: 20px; color: var(--text-secondary); font-style: italic;">No query parameters detected.</div>' : ''}
             </div>
         </div>
 
@@ -500,6 +512,17 @@ export class RequestPanel {
                 const key = input.dataset.key;
                 if(val) fullUrl = fullUrl.replace(':' + key, val);
             });
+
+            // Handle Query Params
+            const queryParts = [];
+            document.querySelectorAll('#queryParamsTable input').forEach(input => {
+                const val = input.value.trim();
+                const key = input.dataset.key;
+                if(val) queryParts.push(encodeURIComponent(key) + '=' + encodeURIComponent(val));
+            });
+            if(queryParts.length > 0) {
+                fullUrl += (fullUrl.includes('?') ? '&' : '?') + queryParts.join('&');
+            }
             
             // Handle Headers
             const headers = {};
