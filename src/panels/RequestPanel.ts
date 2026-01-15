@@ -79,6 +79,7 @@ export class RequestPanel {
     private _getHtmlForWebview(data: any) {
         const defaultTab = data.defaultTab || 'body';
         const hasParams = data.pathParams && data.pathParams.length > 0;
+        const hasQueryParams = data.queryParams && data.queryParams.length > 0;
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -283,7 +284,9 @@ export class RequestPanel {
         <div class="tab ${defaultTab === 'path' ? 'active' : ''}" onclick="switchTab('path')">
             Params ${hasParams ? '<span class="tab-badge">!</span>' : ''}
         </div>
-        <div class="tab ${defaultTab === 'query' ? 'active' : ''}" onclick="switchTab('query')">Query</div>
+        <div class="tab ${defaultTab === 'query' ? 'active' : ''}" onclick="switchTab('query')">
+            Query ${hasQueryParams ? '<span class="tab-badge">!</span>' : ''}
+        </div>
         <div class="tab" onclick="switchTab('headers')">Headers</div>
         <div class="tab" onclick="switchTab('auth')">Auth</div>
         <div class="tab ${defaultTab === 'body' ? 'active' : ''}" onclick="switchTab('body')">Body</div>
