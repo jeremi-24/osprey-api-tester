@@ -180,7 +180,7 @@ class EndpointItem extends vscode.TreeItem {
 
     this.command = {
       command: 'api-tester.openPanel',
-      title: 'Tester cet Endpoint',
+      title: 'Test this Endpoint',
       arguments: [filePath, line]
     };
   }

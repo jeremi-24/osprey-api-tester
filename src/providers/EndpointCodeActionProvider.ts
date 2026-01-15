@@ -15,12 +15,12 @@ export class EndpointCodeActionProvider implements vscode.CodeActionProvider {
             return [];
         }
 
-        const action = new vscode.CodeAction(' Tester cet Endpoint', vscode.CodeActionKind.QuickFix);
+        const action = new vscode.CodeAction(' Test this Endpoint', vscode.CodeActionKind.QuickFix);
         
         action.command = {
             command: 'api-tester.openPanel',
-            title: 'Tester cet Endpoint',
-            arguments: [document.fileName, range.start.line] // On passe la ligne du curseur
+            title: 'Test this Endpoint',
+            arguments: [document.fileName, range.start.line]
         };
 
         return [action];
