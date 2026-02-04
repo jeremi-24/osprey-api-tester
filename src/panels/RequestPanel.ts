@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
+import FormData from 'form-data';
+import * as fs from 'fs';
 
 export class RequestPanel {
     public static currentPanel: RequestPanel | undefined;
@@ -52,6 +54,20 @@ export class RequestPanel {
                 case 'updateQueryParam':
                     this._queryCache[message.key] = message.value;
                     break;
+                case 'selectFile':
+                    const uris = await vscode.window.showOpenDialog({
+                        canSelectFiles: true,
+                        canSelectMany: false,
+                        openLabel: 'Select File'
+                    });
+                    if (uris && uris.length > 0) {
+                        this._panel.webview.postMessage({
+                            command: 'fileSelected',
+                            path: uris[0].fsPath,
+                            id: message.id
+                        });
+                    }
+                    break;
             }
         }, null, this._disposables);
     }
@@ -59,11 +75,39 @@ export class RequestPanel {
     private async _handleSendRequest(message: any) {
         try {
             const startTime = Date.now();
+            let data: any;
+            let headers = message.headers || {};
+
+            if (message.bodyType === 'form-data' && message.formData) {
+                const form = new FormData();
+                for (const item of message.formData) {
+                    if (item.type === 'file' && item.value) {
+                        if (fs.existsSync(item.value)) {
+                            form.append(item.key, fs.createReadStream(item.value));
+                        }
+                    } else {
+                        form.append(item.key, item.value);
+                    }
+                }
+                data = form;
+                // Merge form headers (contains boundary)
+                // Remove content-type from existing headers to avoid conflict
+                const cleanHeaders = Object.keys(headers).reduce((acc: any, key) => {
+                    if (key.toLowerCase() !== 'content-type') {
+                        acc[key] = headers[key];
+                    }
+                    return acc;
+                }, {});
+                headers = { ...cleanHeaders, ...form.getHeaders() };
+            } else {
+                data = message.body ? JSON.parse(message.body) : undefined;
+            }
+
             const response = await axios({
                 method: message.method,
                 url: message.url,
-                data: message.body ? JSON.parse(message.body) : undefined,
-                headers: message.headers,
+                data: data,
+                headers: headers,
                 validateStatus: () => true
             });
             const duration = Date.now() - startTime;
@@ -267,6 +311,8 @@ export class RequestPanel {
         .param-table tr { border-bottom: 1px solid var(--border-color); }
         .param-table td { padding: 12px 8px; }
         .param-key { font-family: 'Courier New', monospace; color: var(--button-bg); width: 140px; }
+        .fd-key-col { width: 150px; min-width: 150px; }
+        .fd-key-col .input-box { width: 100%; }
 
         /* AUTH SECTION */
         .auth-container { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
@@ -444,13 +490,32 @@ export class RequestPanel {
         <!-- BODY EDITOR -->
         <div id="pane-body" class="tab-pane ${defaultTab === 'body' ? 'active' : ''}">
             <div class="editor-header">
-                <div>application/json</div>
-                <div style="display: flex; gap: 15px;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span style="font-weight: 600;">Body Type:</span>
+                    <label style="cursor: pointer;"><input type="radio" name="bodyType" value="json" checked onchange="toggleBodyType()"> JSON</label>
+                    <label style="cursor: pointer;"><input type="radio" name="bodyType" value="form-data" onchange="toggleBodyType()"> Form Data</label>
+                </div>
+                <div id="jsonActions" style="display: flex; gap: 15px;">
                     <div class="action-link" onclick="format()"><i class="codicon codicon-wand"></i> Format</div>
                     <div class="action-link" onclick="copy()"><i class="codicon codicon-copy"></i> Copy</div>
                 </div>
+                 <div id="formDataActions" style="display: none; gap: 15px;">
+                    <div class="action-link" onclick="addFormDataRow()"><i class="codicon codicon-add"></i> Add Field</div>
+                </div>
             </div>
-            <div id="bodyEditor" style="flex: 1;"></div>
+            
+            <div id="bodyJSON" style="flex: 1; display: flex; flex-direction: column;">
+                 <div id="bodyEditor" style="flex: 1;"></div>
+            </div>
+
+            <div id="bodyFormData" style="display: none; flex: 1; overflow-y: auto;">
+                 <div class="param-table-container">
+                    <table class="param-table" id="formDataTable">
+                        <!-- Dynamic rows -->
+                    </table>
+                     <div id="emptyFormData" style="padding: 20px; color: var(--text-secondary); font-style: italic;">No form data fields. Click 'Add Field' to start.</div>
+                </div>
+            </div>
         </div>
 
         <!-- RESPONSE -->
@@ -654,12 +719,40 @@ export class RequestPanel {
             btn.innerHTML = '<i class="codicon codicon-loading codicon-modifier-spin"></i> Sending...';
             btn.disabled = true;
 
+            // Handle Body
+            const bodyType = document.querySelector('input[name="bodyType"]:checked').value;
+            let body = '{}';
+            let formData = [];
+
+            if (bodyType === 'json') {
+                 body = bodyEditor ? bodyEditor.getValue() : '{}';
+            } else {
+                // Collect Form Data
+                document.querySelectorAll('#formDataTable tr').forEach(row => {
+                    const key = row.querySelector('.fd-key')?.value.trim();
+                    const type = row.querySelector('.fd-type')?.value;
+                    // Select input based on type
+                    const valInput = type === 'text' 
+                        ? row.querySelector('.fd-val-text') 
+                        : row.querySelector('.fd-val-file');
+                        
+                    // Store value or file path
+                    const val = valInput?.value.trim() || valInput?.dataset.path || '';
+                    
+                    if (key) {
+                        formData.push({ key, type, value: val });
+                    }
+                });
+            }
+
              vscode.postMessage({
                 command: 'sendRequest',
                 method: '${data.method}',
                 url: fullUrl,
                 headers: headers,
-                body: bodyEditor ? bodyEditor.getValue() : '{}'
+                bodyType: bodyType,
+                formData: formData,
+                body: body
             });
 
             setTimeout(() => {
@@ -759,6 +852,72 @@ document.addEventListener('mouseup', () => {
         if (bodyEditor) bodyEditor.layout();
     }
 });
+    
+        // Form Data Logic
+        function toggleBodyType() {
+            const type = document.querySelector('input[name="bodyType"]:checked').value;
+            document.getElementById('bodyJSON').style.display = type === 'json' ? 'flex' : 'none';
+            document.getElementById('bodyFormData').style.display = type === 'form-data' ? 'flex' : 'none';
+            document.getElementById('jsonActions').style.display = type === 'json' ? 'flex' : 'none';
+            document.getElementById('formDataActions').style.display = type === 'form-data' ? 'flex' : 'none';
+            if (type === 'json' && bodyEditor) bodyEditor.layout();
+        }
+
+        function addFormDataRow() {
+            const table = document.getElementById('formDataTable');
+            document.getElementById('emptyFormData').style.display = 'none';
+            const rowId = 'fd-row-' + Date.now();
+            const row = table.insertRow();
+            row.innerHTML = \`
+                <td class="fd-key-col"><div class="input-box"><input type="text" class="fd-key" placeholder="Key"></div></td>
+                <td>
+                    <div class="input-box" style="width: 80px;">
+                        <select class="fd-type" onchange="toggleFdInput('\${rowId}', this.value)">
+                            <option value="text">Text</option>
+                            <option value="file">File</option>
+                        </select>
+                    </div>
+                </td>
+                <td style="width: 100%;">
+                    <div id="\${rowId}-text" class="input-box"><input type="text" class="fd-val fd-val-text" placeholder="Value"></div>
+                    <div id="\${rowId}-file" class="input-box" style="display: none; gap: 5px;">
+                        <input type="text" class="fd-val fd-val-file" readonly placeholder="No file selected">
+                        <button style="border: none; background: transparent; color: var(--accent); cursor: pointer;" onclick="selectFile('\${rowId}')"><i class="codicon codicon-folder-opened"></i></button>
+                    </div>
+                </td>
+                <td style="width: 30px; text-align: center;"><i class="codicon codicon-close" style="cursor: pointer;" onclick="removeFdRow(this)"></i></td>
+            \`;
+        }
+
+        function removeFdRow(btn) {
+            btn.closest('tr').remove();
+            if(document.getElementById('formDataTable').rows.length === 0) {
+                document.getElementById('emptyFormData').style.display = 'block';
+            }
+        }
+
+        function toggleFdInput(rowId, type) {
+            document.getElementById(rowId + '-text').style.display = type === 'text' ? 'flex' : 'none';
+            document.getElementById(rowId + '-file').style.display = type === 'file' ? 'flex' : 'none';
+        }
+
+        function selectFile(rowId) {
+            vscode.postMessage({ command: 'selectFile', id: rowId });
+        }
+
+        // Listener for file selection
+        window.addEventListener('message', e => {
+            const m = e.data;
+            if (m.command === 'fileSelected') {
+                const container = document.getElementById(m.id + '-file');
+                if (container) {
+                    const input = container.querySelector('input');
+                    input.value = m.path;
+                    input.dataset.path = m.path; // Store explicit path
+                }
+            }
+        });
+
 </script>
     </body>
     </html>`;
