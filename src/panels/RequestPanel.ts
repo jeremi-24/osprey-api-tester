@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import axios from 'axios';
 import FormData from 'form-data';
 import * as fs from 'fs';
+import { EnvParser } from '../core/env-parser';
+import { DatabaseService } from '../core/db-connection';
+import { AIService } from '../core/ai-service';
 
 export class RequestPanel {
     public static currentPanel: RequestPanel | undefined;
@@ -11,6 +14,7 @@ export class RequestPanel {
     private _context: vscode.ExtensionContext;
     private _lastAuth: any = { type: 'none' };
     private _queryCache: { [key: string]: string } = {};
+    private _aiService: AIService | undefined;
 
     private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
         this._panel = panel;
@@ -23,6 +27,99 @@ export class RequestPanel {
         const savedAuth = this._context.workspaceState.get<any>('osprey_auth');
         if (savedAuth) {
             this._lastAuth = savedAuth;
+        }
+    }
+
+    private async _handleSmartPicker(message: any) {
+        try {
+            // 1. Check for API Key
+            let apiKey = await this._context.secrets.get('antigravity_api_key');
+            if (!apiKey) {
+                apiKey = await vscode.window.showInputBox({
+                    title: 'Enter Gemini API Key',
+                    prompt: 'Required for Smart DB Picker features',
+                    password: true
+                });
+                if (apiKey) {
+                    await this._context.secrets.store('antigravity_api_key', apiKey);
+                } else {
+                    vscode.window.showWarningMessage('Smart framework requires an API Key.');
+                    return;
+                }
+            }
+
+            // 2. Initialize AI Service
+            if (!this._aiService) {
+                this._aiService = new AIService(apiKey);
+            }
+
+            // 3. Get DB Config
+            const rootPath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+            if (!rootPath) return;
+
+            const dbConfig = EnvParser.getDbConfig(rootPath);
+            if (!dbConfig) {
+                vscode.window.showErrorMessage('Could not find .env file or database configuration.');
+                return;
+            }
+
+            // 4. Gather Context (Entity File or Source File)
+            let contextCode = '';
+            let contextName = '';
+            if (message.entityPath && fs.existsSync(message.entityPath)) {
+                contextCode = fs.readFileSync(message.entityPath, 'utf8');
+                contextName = 'Entity';
+            } else if (message.sourceFilePath && fs.existsSync(message.sourceFilePath)) {
+                contextCode = fs.readFileSync(message.sourceFilePath, 'utf8');
+                contextName = 'Controller';
+            }
+
+            if (!contextCode) {
+                vscode.window.showWarningMessage('No context file found to analyze.');
+                return;
+            }
+
+            // 5. Ask AI
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Asking Gemini to analyze ${contextName}...`
+            }, async (progress) => {
+                try {
+                    const aiResult = await this._aiService!.analyzeContextForDb(contextCode, dbConfig.type);
+
+                    if (!aiResult.query) {
+                        vscode.window.showWarningMessage('AI could not determine a query.');
+                        return;
+                    }
+
+                    progress.report({ message: `Querying Database (${aiResult.tableName})...` });
+
+                    // 6. Execute Query
+                    const db = new DatabaseService(dbConfig);
+                    const connected = await db.connect();
+                    if (!connected) {
+                        vscode.window.showErrorMessage('Failed to connect to Local Database.');
+                        return;
+                    }
+
+                    const rows = await db.executeQuery(aiResult.query);
+                    await db.disconnect();
+
+                    // 7. Send to WebView
+                    this._panel.webview.postMessage({
+                        command: 'showSmartPicker',
+                        tableName: aiResult.tableName,
+                        rows: rows,
+                        targetKey: message.key
+                    });
+
+                } catch (err: any) {
+                    vscode.window.showErrorMessage(`Smart Picker Error: ${err.message}`);
+                }
+            });
+
+        } catch (error) {
+            console.error(error);
         }
     }
 
@@ -76,6 +173,9 @@ export class RequestPanel {
                             id: message.id
                         });
                     }
+                    break;
+                case 'smartPicker':
+                    await this._handleSmartPicker(message);
                     break;
             }
         }, null, this._disposables);
@@ -208,6 +308,20 @@ export class RequestPanel {
             transition: background 0.2s;
         }
         .send-btn:hover { background: var(--button-hover); }
+        .icon-btn {
+            background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: none;
+            padding: 4px 8px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: background 0.2s;
+        }
+        .icon-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
 
         /* CONFIG AREA */
         .config-container {
@@ -346,10 +460,32 @@ export class RequestPanel {
         .bg-info { background-color: #0366d6; }    /* Blue */
         .bg-warning { background-color: #d29922; } /* Orange */
         .bg-error { background-color: #d73a49; }   /* Red */
-
+        
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); backdrop-filter: blur(2px); }
+        .modal-content { background-color: var(--vscode-editor-background); margin: 10% auto; padding: 20px; border: 1px solid var(--vscode-panel-border); width: 90%; max-width: 900px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border-radius: 6px; }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover { color: var(--vscode-textLink-foreground); }
+        .picker-table-wrapper { max-height: 400px; overflow-y: auto; margin-top: 15px; border: 1px solid var(--vscode-panel-border); }
+        #smartPickerTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+        #smartPickerTable th, #smartPickerTable td { border: 1px solid var(--vscode-panel-border); padding: 8px; text-align: left; }
+        #smartPickerTable th { background-color: var(--vscode-editor-inactiveSelectionBackground); position: sticky; top: 0; }
+        #smartPickerTable tr:hover { background-color: var(--vscode-list-hoverBackground); cursor: pointer; }
     </style>
 </head>
 <body>
+    <!-- SMart Picker Modal -->
+    <div id="smartPickerModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeSmartPicker()">&times;</span>
+            <h3 style="margin-top: 0;">Smart Record Picker <span id="pickerTableName" style="font-weight: normal; color: var(--vscode-descriptionForeground); font-size: 0.9em;"></span></h3>
+            <p id="smartPickerStatus">Analyzing project structure with Gemini...</p>
+            <div class="picker-table-wrapper">
+                <table id="smartPickerTable"></table>
+            </div>
+        </div>
+    </div>
+
     <div class="app-header">
         <div class="logo-section">
             <img src="${iconUri}" alt="Osprey Logo" class="logo-icon" style="width: 24px; height: 24px;">
@@ -404,8 +540,13 @@ export class RequestPanel {
                         <tr>
                             <td class="param-key">:${p.key}</td>
                             <td>
-                                <div class="input-box">
-                                    <input type="text" data-key="${p.key}" placeholder="Value">
+                                <div style="display:flex; gap: 8px; align-items: center;">
+                                    <div class="input-box" style="flex:1;">
+                                        <input type="text" data-key="${p.key}" value="${p.value}" oninput="updatePathParam(this)">
+                                    </div>
+                                    <button class="icon-btn" title="Smart Pick Record" onclick="openSmartPicker('${p.key}')">
+                                        <i class="codicon codicon-database"></i>
+                                    </button>
                                 </div>
                             </td>
                         </tr>

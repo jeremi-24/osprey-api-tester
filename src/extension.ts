@@ -105,7 +105,9 @@ export function activate(context: vscode.ExtensionContext) {
                     payload: initialPayload,
                     queryParams: targetEndpoint.queryParams.map(q => ({ key: q, value: '' })),
                     defaultTab: defaultTab,
-                    bodyType: targetEndpoint.isMultipart ? 'form-data' : 'json'
+                    bodyType: targetEndpoint.isMultipart ? 'form-data' : 'json',
+                    entityPath: targetEndpoint.entityPath,
+                    sourceFilePath: fileName
                 });
             }
         )
