@@ -2,6 +2,16 @@
 
 All notable changes to the "osprey-api-tester" extension will be documented in this file.
 
+## [0.0.6] - 2026-02-04
+### Added
+- **Multipart/Form-Data Support**: Full support for file uploads. The panel automatically detects endpoints using `FileInterceptor` or `UploadedFile` and switches to the new "Form Data" UI.
+- **Form Data Builder**: A dynamic interface to add key-value pairs (Text or File) to your multipart requests.
+- **Persistent Authentication**: Bearer tokens and Basic Auth credentials are now saved and restored per workspace.
+
+### Fixed
+- **Duplicate Requests**: Fixed a critical bug where API calls were triggered multiple times due to event listener duplication.
+- **Content-Type Conflict**: Resolved issues with boundary handling when sending multipart forms.
+
 ## [0.0.5] - 2026-01-15
 ### Fixed
 - Missing persistence of query, params and auth
