@@ -36,10 +36,7 @@ jobs:
         vsce package
         echo "vsix_path=$(ls *.vsix)" >> $GITHUB_OUTPUT
 
-    - name: Publish to VS Code Marketplace
-      run: vsce publish -p ${{ secrets.VSCE_PAT }} --packagePath ${{ steps.package.outputs.vsix_path }}
-      env:
-        VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
