@@ -97,7 +97,7 @@ export function activate(context: vscode.ExtensionContext) {
                 const isBodyMethod = ['POST', 'PUT', 'PATCH'].includes(targetEndpoint.httpMethod);
                 const defaultTab = isBodyMethod ? 'body' : (pathParamsData.length > 0 ? 'path' : 'query');
 
-                RequestPanel.createOrShow(context.extensionUri, {
+                RequestPanel.createOrShow(context, {
                     method: targetEndpoint.httpMethod,
                     route: targetEndpoint.route,
                     baseUrl: baseUrl,

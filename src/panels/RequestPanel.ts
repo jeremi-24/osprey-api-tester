@@ -8,17 +8,25 @@ export class RequestPanel {
     private readonly _panel: vscode.WebviewPanel;
     private _disposables: vscode.Disposable[] = [];
     private _extensionUri: vscode.Uri;
+    private _context: vscode.ExtensionContext;
     private _lastAuth: any = { type: 'none' };
     private _queryCache: { [key: string]: string } = {};
 
-    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+    private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
         this._panel = panel;
-        this._extensionUri = extensionUri;
+        this._context = context;
+        this._extensionUri = context.extensionUri;
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
         this._setWebviewMessageListener();
+
+        // Load persisted auth
+        const savedAuth = this._context.workspaceState.get<any>('osprey_auth');
+        if (savedAuth) {
+            this._lastAuth = savedAuth;
+        }
     }
 
-    public static createOrShow(extensionUri: vscode.Uri, data: any) {
+    public static createOrShow(context: vscode.ExtensionContext, data: any) {
         if (RequestPanel.currentPanel) {
             RequestPanel.currentPanel._panel.reveal(vscode.ViewColumn.Two);
             RequestPanel.currentPanel.update(data);
@@ -28,7 +36,7 @@ export class RequestPanel {
             enableScripts: true,
             retainContextWhenHidden: true
         });
-        RequestPanel.currentPanel = new RequestPanel(panel, extensionUri);
+        RequestPanel.currentPanel = new RequestPanel(panel, context);
         RequestPanel.currentPanel.update(data);
     }
 
@@ -50,6 +58,7 @@ export class RequestPanel {
                     break;
                 case 'updateAuth':
                     this._lastAuth = message.auth;
+                    await this._context.workspaceState.update('osprey_auth', message.auth);
                     break;
                 case 'updateQueryParam':
                     this._queryCache[message.key] = message.value;
