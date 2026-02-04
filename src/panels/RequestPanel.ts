@@ -141,6 +141,7 @@ export class RequestPanel {
         const hasParams = data.pathParams && data.pathParams.length > 0;
         const hasQueryParams = data.queryParams && data.queryParams.length > 0;
         const iconUri = this._panel.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'icon.png'));
+        const bodyType = data.bodyType || 'json';
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -412,12 +413,12 @@ export class RequestPanel {
                     <tr>
                         <td>
                             <div class="input-box">
-                                <input type="text" class="header-key" value="Content-Type" placeholder="Key">
+                                <input type="text" class="header-key" value="${bodyType === 'json' ? 'Content-Type' : ''}" placeholder="Key">
                             </div>
                         </td>
                          <td>
                             <div class="input-box">
-                                <input type="text" class="header-val" value="application/json" placeholder="Value">
+                                <input type="text" class="header-val" value="${bodyType === 'json' ? 'application/json' : ''}" placeholder="Value">
                             </div>
                         </td>
                          <td style="width: 30px; text-align: center;">
@@ -492,8 +493,8 @@ export class RequestPanel {
             <div class="editor-header">
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <span style="font-weight: 600;">Body Type:</span>
-                    <label style="cursor: pointer;"><input type="radio" name="bodyType" value="json" checked onchange="toggleBodyType()"> JSON</label>
-                    <label style="cursor: pointer;"><input type="radio" name="bodyType" value="form-data" onchange="toggleBodyType()"> Form Data</label>
+                    <label style="cursor: pointer;"><input type="radio" name="bodyType" value="json" ${bodyType === 'json' ? 'checked' : ''} onchange="toggleBodyType()"> JSON</label>
+                    <label style="cursor: pointer;"><input type="radio" name="bodyType" value="form-data" ${bodyType === 'form-data' ? 'checked' : ''} onchange="toggleBodyType()"> Form Data</label>
                 </div>
                 <div id="jsonActions" style="display: flex; gap: 15px;">
                     <div class="action-link" onclick="format()"><i class="codicon codicon-wand"></i> Format</div>
@@ -608,6 +609,8 @@ export class RequestPanel {
 
         // Initialize auth UI state
         toggleAuthFields();
+        // Initialize Body Type UI state
+        toggleBodyType();
 
         // Auth listeners
         const authInputs = ['authType', 'authToken', 'authUser', 'authPass'];

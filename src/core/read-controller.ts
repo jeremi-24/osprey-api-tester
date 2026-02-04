@@ -14,6 +14,7 @@ export interface EndpointDef {
   line: number;
   startLine: number;
   endLine: number;
+  isMultipart?: boolean;
 }
 
 /**
@@ -119,7 +120,27 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
           }
         }
         return p.getName();
+
       });
+
+    const hasMultipartInterceptor = method.getDecorators().some(d => {
+      if (d.getName() === 'UseInterceptors') {
+        const args = d.getArguments();
+        return args.some(arg => {
+          const text = arg.getText();
+          return text.includes('FileInterceptor') || text.includes('FilesInterceptor');
+        });
+      }
+      return false;
+    });
+
+    const hasUploadedFileParam = method.getParameters().some(p =>
+      p.getDecorators().some(d =>
+        ['UploadedFile', 'UploadedFiles'].includes(d.getName())
+      )
+    );
+
+    const isMultipart = hasMultipartInterceptor || hasUploadedFileParam;
 
     endpoints.push({
       httpMethod,
@@ -133,7 +154,8 @@ export function readController(sourceFile: SourceFile): EndpointDef[] {
       queryParams,
       line,
       startLine,
-      endLine
+      endLine,
+      isMultipart
     });
   });
 
