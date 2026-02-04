@@ -2,7 +2,7 @@
   "name": "osprey-api-tester",
   "displayName": "Osprey API Tester",
   "description": "Automatically analyzes your NestJS controllers, DTOs, and entities to generate API test template payload and requests. Provides a developer-friendly interface in VSCode for testing endpoints, viewing routes, and debugging API interactions efficiently.",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "icon": "icon.png",
   "publisher": "jeremi-24",
   "engines": {
@@ -10,19 +10,17 @@
   },
   "readme": "Readme-marketplace.md",
   "repository": {
-  "type": "git",
-  "url": "https://github.com/jeremi-24/osprey-api-tester.git",
-  "license": "MIT"
-
-},
-
+    "type": "git",
+    "url": "https://github.com/jeremi-24/osprey-api-tester.git",
+    "license": "MIT"
+  },
   "categories": [
     "Debuggers",
     "Testing"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-     "workspaceContains:**/*.controller.ts",
+    "workspaceContains:**/*.controller.ts",
     "onCommand:api-tester.openPanel",
     "onCommand:api-tester.analyze",
     "onCommand:api-tester.refreshEntry",
@@ -79,22 +77,22 @@
         }
       ]
     },
-   "configuration": {
-  "title": "NestJS API Tester",
-  "properties": {
-    "nestjsApiTester.baseUrl": {
-      "type": "string",
-      "default": "http://localhost:5000",
-      "description": "URL de base par défaut pour vos requêtes API.",
-      "scope": "resource"
+    "configuration": {
+      "title": "NestJS API Tester",
+      "properties": {
+        "nestjsApiTester.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:5000",
+          "description": "URL de base par défaut pour vos requêtes API.",
+          "scope": "resource"
+        },
+        "nestjsApiTester.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Clé API Google Gemini pour générer les payloads JSON automatiquement."
+        }
+      }
     },
-    "nestjsApiTester.geminiApiKey": {
-      "type": "string",
-      "default": "",
-      "description": "Clé API Google Gemini pour générer les payloads JSON automatiquement."
-    }
-  }
-},
     "keywords": [
       "nestjs",
       "api",

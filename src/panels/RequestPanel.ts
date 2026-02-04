@@ -13,6 +13,7 @@ export class RequestPanel {
         this._panel = panel;
         this._extensionUri = extensionUri;
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+        this._setWebviewMessageListener();
     }
 
     public static createOrShow(extensionUri: vscode.Uri, data: any) {
@@ -31,7 +32,6 @@ export class RequestPanel {
 
     public update(data: any) {
         this._panel.webview.html = this._getHtmlForWebview(data);
-        this._setWebviewMessageListener();
     }
 
     private _setWebviewMessageListener() {
